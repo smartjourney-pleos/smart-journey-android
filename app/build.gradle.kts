@@ -35,6 +35,7 @@ android {
 
 dependencies {
     implementation(libs.pleos.vehicle)
+    implementation(libs.pleos.navihelper)
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

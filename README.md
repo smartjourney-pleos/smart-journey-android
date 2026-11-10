@@ -5,10 +5,10 @@
 
 ## 기술 스택
 
-Kotlin 2.0, Jetpack Compose, Coroutines/Flow, Pleos Vehicle SDK 2.3.2 (NaviHelper SDK는 연동 예정)
+Kotlin 2.0, Jetpack Compose, Coroutines/Flow, Pleos Vehicle SDK 2.3.2, Pleos NaviHelper SDK 3.0.5 (의존성만 추가, 연동 코드는 아직 없음)
 
 - `minSdk 28`, `targetSdk 34`, `compileSdk 35`, JDK 17 이상 (JDK 21 사용 중)
-- 에뮬레이터/차량의 Vehicle 서비스 **2.3.13 이상** 필요
+- 에뮬레이터/차량의 Vehicle 서비스 **2.3.13 이상**, Navi 서비스 **2.0.1 이상** 필요
 
 ## 현재 구성
 
@@ -19,7 +19,7 @@ Kotlin 2.0, Jetpack Compose, Coroutines/Flow, Pleos Vehicle SDK 2.3.2 (NaviHelpe
 | `app/.../core/VehicleGatewayFactory.kt` | Pleos 서비스에 붙으면 실제 구현, 실패하면 Fake로 대체 |
 | `app/.../MainActivity.kt` | 신호 연동 확인용 임시 화면 (이후 정차 화면/승인 카드로 대체) |
 
-선언한 차량 권한: `CAR_SEATS`, `CAR_DOORS`. 내비 연동 등 기능이 늘면 권한을 추가합니다.
+선언한 차량 권한: `CAR_SEATS`, `CAR_DOORS`, `NAVI_ROUTE`, `NAVI_ROUTE_SEARCH`. 내비 화면 요청(`requestNavigationScreen`)을 쓰게 되면 `NAVI_CUSTOM_MAP`을 추가합니다.
 
 ## 빌드와 실행
 
