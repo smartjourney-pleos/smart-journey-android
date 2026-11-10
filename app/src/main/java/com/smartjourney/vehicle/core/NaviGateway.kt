@@ -15,8 +15,9 @@ data class Place(
 )
 
 /**
- * `onTripInfo` 값. eta·distance의 단위는 문서에 없어 SDK 값을 그대로 둔다.
- * ponytail: 에뮬레이터에서 단위를 확인한 뒤 remainingMin 같은 변환 필드를 여기에 추가.
+ * `onTripInfo` 값. 문서에는 단위가 없다. 에뮬레이터 2.1.0에서 같은 구간의 내비 엔진 로그
+ * (reachTime 1965 / reachDist 21895)와 크기를 대조해 eta=초, distance=미터로 본다.
+ * ponytail: 실차에서 단위가 다르면 이 두 필드의 변환만 고친다.
  */
 data class NaviTrip(val eta: Int, val distance: Int)
 
@@ -36,7 +37,7 @@ interface NaviGateway {
     /** [dest]까지의 trip 정보를 요청한다. 결과는 [trip]으로 온다. */
     suspend fun requestTrip(dest: Place)
 
-    /** 목적지와 경유지(최대 2개)로 경로를 요청한다. 탐색 완료(`onRoutingCompleted`)까지 기다린다. */
+    /** 목적지와 경유지(최대 2개)로 경로를 요청한다. 경로가 잡힐 때(`onRoutingCompleted` 또는 `onRouteStarted`)까지 기다린다. */
     suspend fun setRoute(dest: Place, waypoints: List<Place> = emptyList()): Result<Unit>
 
     fun release()

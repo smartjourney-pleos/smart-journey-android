@@ -6,6 +6,7 @@ import ai.pleos.playground.navi.constants.WaypointIndex
 import ai.pleos.playground.navi.data.DestinationArrivedInfo
 import ai.pleos.playground.navi.data.RequestWaypointInfo
 import ai.pleos.playground.navi.data.RouteInfo
+import ai.pleos.playground.navi.data.RouteStartInfo
 import ai.pleos.playground.navi.data.RouteWithWaypointsRequest
 import ai.pleos.playground.navi.data.TripInfo
 import ai.pleos.playground.navi.data.TripRequest
@@ -27,7 +28,7 @@ class PleosNaviGateway(context: Context) : NaviGateway {
     private val navi = NaviHelper(context)
     private val connected = CompletableDeferred<Unit>()
 
-    // 경로 요청은 한 번에 하나만 기다린다. onRoutingCompleted / onError가 결과를 채운다.
+    // 경로 요청은 한 번에 하나만 기다린다. onRoutingCompleted·onRouteStarted / onError가 결과를 채운다.
     @Volatile private var pendingRoute: CompletableDeferred<Result<Unit>>? = null
 
     private val tripFlow = MutableSharedFlow<NaviTrip>(
@@ -53,6 +54,11 @@ class PleosNaviGateway(context: Context) : NaviGateway {
         }
 
         override fun onRoutingCompleted() {
+            pendingRoute?.complete(Result.success(Unit))
+        }
+
+        // Pleos Connect 에뮬레이터 2.1.0은 onRoutingCompleted 없이 onRouteStarted만 보낸다. (경로 계산 뒤 안내 시작)
+        override fun onRouteStarted(info: RouteStartInfo) {
             pendingRoute?.complete(Result.success(Unit))
         }
 
