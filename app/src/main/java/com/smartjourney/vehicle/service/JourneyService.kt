@@ -80,12 +80,20 @@ class JourneyService : Service() {
                 if (!ApprovalActivity.isShowing) Notices.postPrompt(this@JourneyService, prompt)
             }
         }
+        scope.launch {
+            // 여정이 복원되지 않았거나 시작되지 않은 상태에서 서비스만 부활한 경우 안전하게 자동 종료
+            delay(5_000)
+            if (!wasActive && !engine.state.value.active) {
+                stopSelf()
+            }
+        }
         scope.launch { engine.notices.collect { Notices.result(this@JourneyService, it) } }
     }
 
-    // ponytail: 여정 상태는 메모리에만 있다. 서버(FakeBackend)도 메모리라 지금은 복원할 대상이 없다.
-    // 실서버 연동 때 GET /journeys/current로 복원하고 START_STICKY로 바꾼다 (명세서 4.4).
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_NOT_STICKY
+    /**
+     * 프로세스가 LMK 등으로 종료되어도 복원된 여정 상태로 알림과 감시를 유지하도록 START_STICKY 적용 (명세서 4.4).
+     */
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
 
     override fun onDestroy() {
         scope.cancel()

@@ -15,6 +15,7 @@ import com.smartjourney.vehicle.core.VehicleGateway
 import com.smartjourney.vehicle.core.VehicleSnapshot
 import com.smartjourney.vehicle.core.setRouteAndShowNavigation
 import com.smartjourney.vehicle.data.FakeBackend
+import com.smartjourney.vehicle.data.PreferencesJourneyStorage
 import com.smartjourney.vehicle.demo.DemoController
 import com.smartjourney.vehicle.domain.Store
 import com.smartjourney.vehicle.engine.Arrival
@@ -67,8 +68,9 @@ class AppGraph(private val context: Context) {
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     val demo = DemoController(scope)
     val backend = FakeBackend()
+    val storage = PreferencesJourneyStorage(context)
     val signals = AppSignals(context, NaviGatewayFactory.create(context), demo, scope)
-    val engine = JourneyEngine(signals, backend, scope, logger = { if (BuildConfig.DEBUG) Log.i(TAG, it) })
+    val engine = JourneyEngine(signals, backend, scope, storage = storage, logger = { if (BuildConfig.DEBUG) Log.i(TAG, it) })
 
     private val prefs = context.getSharedPreferences("smart_journey", Context.MODE_PRIVATE)
 
@@ -78,10 +80,23 @@ class AppGraph(private val context: Context) {
      */
     val consented = MutableStateFlow(prefs.getString("consent_version", null) == CONSENT_VERSION)
 
+    init {
+        if (consented.value) {
+            val restored = engine.restore()
+            if (restored) {
+                Log.i(TAG, "이전 여정 복원 완료 (${engine.state.value.current?.store?.name})")
+                JourneyService.start(context)
+            }
+        }
+    }
+
     fun setConsent(agreed: Boolean) {
         prefs.edit().putString("consent_version", if (agreed) CONSENT_VERSION else null).apply()
         consented.value = agreed
-        if (!agreed) engine.end(revokedConsent = true)
+        if (!agreed) {
+            engine.end(revokedConsent = true)
+            storage.clear()
+        }
     }
 
     /** 내비에 경로를 넣고 엔진을 켠다. 실제 신호 모드에서 내비 입력이 실패하면 시작하지 않는다. */

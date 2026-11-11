@@ -8,3 +8,4 @@ local.properties
 *.jks
 .env
 .kotlin/
+.claude-flow/

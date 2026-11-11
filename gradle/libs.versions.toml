@@ -9,6 +9,7 @@ coroutines = "1.9.0"
 pleosVehicle = "2.3.2"
 pleosNaviHelper = "3.0.5"
 junit = "4.13.2"
+json = "20240303"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
@@ -23,6 +24,7 @@ kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-t
 pleos-vehicle = { module = "ai.pleos.playground:Vehicle", version.ref = "pleosVehicle" }
 pleos-navihelper = { module = "ai.pleos.playground:NaviHelper", version.ref = "pleosNaviHelper" }
 junit = { module = "junit:junit", version.ref = "junit" }
+org-json = { module = "org.json:json", version.ref = "json" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

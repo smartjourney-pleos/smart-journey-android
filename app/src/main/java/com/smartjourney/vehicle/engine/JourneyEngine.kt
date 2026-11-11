@@ -1,5 +1,6 @@
 package com.smartjourney.vehicle.engine
 
+import com.smartjourney.vehicle.data.JourneyStorage
 import com.smartjourney.vehicle.data.WaitingBackend
 import com.smartjourney.vehicle.domain.AlightDetector
 import com.smartjourney.vehicle.domain.ApprovalMethod
@@ -42,11 +43,26 @@ class JourneyEngine(
     private val signals: JourneySignals,
     private val backend: WaitingBackend,
     private val scope: CoroutineScope,
+    private val storage: JourneyStorage? = null,
     private val now: () -> Long = System::currentTimeMillis,
     private val logger: (String) -> Unit = {},
 ) {
     private val _state = MutableStateFlow(JourneyState())
     val state: StateFlow<JourneyState> = _state
+
+    init {
+        if (storage != null) {
+            scope.launch {
+                _state.collect { s ->
+                    if (s.active && s.stops.isNotEmpty()) {
+                        storage.save(s)
+                    } else {
+                        storage.clear()
+                    }
+                }
+            }
+        }
+    }
 
     private val _notices = MutableSharedFlow<String>(extraBufferCapacity = 8)
 
@@ -73,6 +89,19 @@ class JourneyEngine(
         _state.value = JourneyState(active = true, partySize = partySize, stops = stops.map { StopState(it) })
         log("여정 시작 · ${stops.joinToString(" → ") { it.name }} · ${partySize}명")
         runStop()
+    }
+
+    /**
+     * 프로세스 재시작 시 영속 저장소에서 여정 상태를 복원한다.
+     * 활성 여정이 존재하면 엔진 상태를 복원하고 현재 매장 감시(runStop)를 재개한다.
+     */
+    fun restore(): Boolean {
+        val saved = storage?.restore() ?: return false
+        if (!saved.active || saved.stops.isEmpty()) return false
+        _state.value = saved
+        log("여정 복원 · ${saved.current?.store?.name.orEmpty()} (${saved.index + 1}/${saved.stops.size}) · ${saved.partySize}명")
+        runStop(restored = true)
+        return true
     }
 
     /** 카드의 주 버튼: 등록 / 바꾸기 / 도착했어요 / 확인 */
@@ -142,20 +171,26 @@ class JourneyEngine(
 
     // ---------- 매장 한 곳 ----------
 
-    private fun runStop() {
+    private fun runStop(restored: Boolean = false) {
         stopJob?.cancel()
         promptTimeout?.cancel()
         gate = PromptGate()
         detector = null
-        arrived = false
+        val stop = _state.value.current ?: return finish()
+
+        arrived = stop.arrival != null
         verifying = false
-        arrivalReported = false
+        arrivalReported = stop.arrival != null
         manualPrompted = false
         lastEtaMin = null
         lastInputAt = now()
-        val stop = _state.value.current ?: return finish()
-        _state.update {
-            it.copy(remainingMin = null, queue = null, minutesUntilPrompt = null, alight = null, lowAccuracy = false, prompt = null)
+
+        if (!restored) {
+            _state.update {
+                it.copy(remainingMin = null, queue = null, minutesUntilPrompt = null, alight = null, lowAccuracy = false, prompt = null)
+            }
+        } else {
+            _state.update { it.copy(prompt = null) }
         }
         // 수집기가 돌기 전에 부모 Job을 먼저 걸어 둔다 (첫 값이 바로 들어와도 launchInStop이 동작하도록)
         stopJob = Job(scope.coroutineContext[Job])
@@ -188,6 +223,14 @@ class JourneyEngine(
             }
         }
         if (_state.value.index > 0) launchInStop { watchPartyChange() }
+
+        // 복원 시 이미 접수된 매장(REGISTERED, ARRIVED, CALLED)인 경우 백엔드 대기 상태 구독을 재개한다
+        stop.waiting?.let { waiting ->
+            launchInStop { backend.waiting(waiting.waitingId).collect(::onWaiting) }
+            if (arrived) {
+                startDetectorIfReady()
+            }
+        }
     }
 
     private fun onInputs(sec: Int, queue: QueueStatus) {

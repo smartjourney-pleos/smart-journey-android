@@ -2,6 +2,7 @@ package com.smartjourney.vehicle.engine
 
 import com.smartjourney.vehicle.core.VehicleSnapshot
 import com.smartjourney.vehicle.data.FakeBackend
+import com.smartjourney.vehicle.data.InMemoryJourneyStorage
 import com.smartjourney.vehicle.domain.ArrivalResult
 import com.smartjourney.vehicle.domain.Store
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -158,5 +159,65 @@ class JourneyEngineTest {
         signals.arrive.tryEmit(Arrival.Waypoint(1)) // 첫 경유지 = 첫 장소
         runCurrent()
         assertEquals(com.smartjourney.vehicle.domain.AlightDetector.State.WAIT_STOP, engine.state.value.alight)
+    }
+
+    @Test
+    fun 엔진_시작과_상태_변화가_저장소에_자동_저장되고_종료_시_삭제된다() = runTest {
+        val storage = InMemoryJourneyStorage()
+        val engine = JourneyEngine(signals, backend, backgroundScope, storage = storage, now = { testScheduler.currentTime })
+        assertNull(storage.restore())
+
+        engine.start(partySize = 4, stops = backend.stores().take(2))
+        runCurrent()
+        val saved = storage.restore()
+        assertEquals(true, saved?.active)
+        assertEquals(4, saved?.partySize)
+        assertEquals(2, saved?.stops?.size)
+
+        engine.end()
+        runCurrent()
+        assertNull(storage.restore())
+    }
+
+    @Test
+    fun 프로세스_재시작_시_저장된_상태로_복원되고_이어서_동작한다() = runTest {
+        val storage = InMemoryJourneyStorage()
+        val engine = JourneyEngine(signals, backend, backgroundScope, storage = storage, now = { testScheduler.currentTime })
+        engine.start(partySize = 4, stops = backend.stores().take(2))
+        runCurrent()
+
+        // 첫 매장 골든타임 도달 및 접수 승인
+        signals.remaining.value = 20 * 60
+        runCurrent()
+        engine.approve()
+        runCurrent()
+        val waitingId = engine.state.value.stops[0].waiting!!.waitingId
+        assertEquals(StopPhase.REGISTERED, engine.state.value.stops[0].phase)
+
+        // 프로세스 재시작 시뮬레이션: 새로운 엔진 인스턴스에 동일한 storage 연결
+        val restoredEngine = JourneyEngine(signals, backend, backgroundScope, storage = storage, now = { testScheduler.currentTime })
+        assertEquals(false, restoredEngine.state.value.active)
+
+        val restored = restoredEngine.restore()
+        runCurrent()
+        assertTrue(restored)
+        assertTrue(restoredEngine.state.value.active)
+        assertEquals(0, restoredEngine.state.value.index)
+        assertEquals(StopPhase.REGISTERED, restoredEngine.state.value.stops[0].phase)
+        assertEquals(waitingId, restoredEngine.state.value.stops[0].waiting?.waitingId)
+
+        // 복원 후 백엔드 호출 및 착석 이벤트가 정상적으로 다음 매장으로 이어지는지 검증
+        backend.call(waitingId)
+        runCurrent()
+        assertEquals(Prompt.Kind.CALLED, restoredEngine.state.value.prompt?.kind)
+        restoredEngine.approve()
+        runCurrent()
+
+        backend.seat(waitingId)
+        runCurrent()
+        assertEquals(1, restoredEngine.state.value.index)
+        assertEquals(backend.stores()[1].name, restoredEngine.state.value.current?.store?.name)
+        assertEquals(StopPhase.SEATED, restoredEngine.state.value.stops[0].phase)
+        assertTrue(restoredEngine.state.value.active)
     }
 }
