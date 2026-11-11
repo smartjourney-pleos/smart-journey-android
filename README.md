@@ -9,6 +9,7 @@ Kotlin 2.0, Jetpack Compose, Coroutines/Flow, Pleos Vehicle SDK 2.3.2, Pleos Nav
 
 - `minSdk 28`, `targetSdk 34`, `compileSdk 35`, JDK 17 이상 (JDK 21 사용 중)
 - 에뮬레이터/차량의 Vehicle 서비스 **2.3.13 이상**, Navi 서비스 **2.0.1 이상** 필요
+- 정차 중 여정 준비 화면의 **연결 환경**에 SDK 버전과 설치된 서비스 버전을 표시합니다. 최소 요구 버전은 SDK AAR의 메타데이터를 따르며, 서비스가 없거나 낮으면 설치·업데이트 안내가 나옵니다.
 
 ## 프로토타입 1차 (지금 되는 것)
 
@@ -29,6 +30,8 @@ Kotlin 2.0, Jetpack Compose, Coroutines/Flow, Pleos Vehicle SDK 2.3.2, Pleos Nav
 - 서버와 매장 POS: 앱 안의 `FakeBackend`가 대신합니다. 서버 저장소의 여정·접수 API가 나오면 HTTP·STOMP 구현으로 바꿉니다.
 - 좌석·도어·주행 상태의 *변화*와 남은 시간 감소, 도착 이벤트: 에뮬레이터에서 값을 바꿀 수 없어 데모 패널로 넣습니다. 데모 패널의 스위치를 끄면 실제 차량 신호로 돕니다.
 - Gleo 음성 승인, 짐 의심 좌석 표시, 순번 미루기는 없습니다.
+
+데모 방문지는 [Pleos 공식 내비 샘플의 POI](https://github.com/Pleos-Playground/pleos-sample-navi-app/blob/main/app/src/main/java/ai/pleos/playground/navidevapp/data/sample/NaviTestData.kt)를 사용하는 **42dot → 소프트웨어드림센터** 두 곳입니다. 샘플의 예전 주소·좌표 대신 [기기 내비의 현재 POI 조회 결과](docs/verification/pleos-runtime-2026-11-11.json)로 앱과 내비의 장소명·주소·좌표·POI를 일치시켰습니다. 이 장소들의 웨이팅과 POS는 실제 영업 정보가 아닌 시연 데이터입니다. 엔진은 기존처럼 최대 3곳을 지원합니다.
 
 ## 시연 방법
 
@@ -68,7 +71,7 @@ adb shell appops set --user 10 com.smartjourney.vehicle SYSTEM_ALERT_WINDOW allo
 | `AppGraph.kt` | 객체 묶음, 실제 신호와 데모 신호 선택(`AppSignals`) |
 | `app/src/debug/` | `ProbeActivity`(SDK 신호 로그), `DemoReceiver`(터미널 조작). 디버그 빌드에만 들어감 |
 
-선언한 권한: `CAR_SEATS`, `CAR_DOORS`, `NAVI_ROUTE`, `NAVI_ROUTE_SEARCH`, `POST_NOTIFICATIONS`, `FOREGROUND_SERVICE`(+`SPECIAL_USE`). 디버그 빌드에만 `SYSTEM_ALERT_WINDOW`(시연용).
+선언한 권한: `CAR_SEATS`, `CAR_DOORS`, `NAVI_ROUTE`, `NAVI_ROUTE_SEARCH`, `NAVI_CUSTOM_MAP`, `POST_NOTIFICATIONS`, `FOREGROUND_SERVICE`(+`SPECIAL_USE`). 디버그 빌드에만 `SYSTEM_ALERT_WINDOW`(시연용).
 
 데모 패널, 1초 데모 타이머, adb 조작(`DemoReceiver`, `ProbeActivity`)은 디버그 빌드에서만 동작합니다. `FakeBackend`(앱 안 가짜 서버)는 아직 릴리스에도 들어가므로, **실서버 연동 전에는 심사용 빌드를 만들지 않습니다**.
 
@@ -80,6 +83,8 @@ adb shell appops set --user 10 com.smartjourney.vehicle SYSTEM_ALERT_WINDOW allo
 - 알림 category를 `navigation`으로 주면 내비 위 헤드업으로 뜨고 버튼(action) 2개도 같이 보입니다. category가 없으면 중요도가 높아도 헤드업으로 뜨지 않았습니다.
 - 앱이 내비 뒤에 있어도 포그라운드 서비스가 떠 있으면 엔진이 멈추지 않습니다.
 - `CarUxRestrictionsManager` 읽기가 됩니다(P단 정차에서 규제 없음). 도어 "닫힘" 값은 네 문 모두 0입니다.
+
+지도·API 키·환경설정 구분과 11/11 기기 재현 결과는 [내비 화면과 환경설정](docs/navigation-and-env.md)을 참고하세요. `.env.example`은 참고 목록이며 현재 빌드가 `.env`를 읽거나 APK에 주입하지 않습니다. Vehicle/NaviHelper 연동에 프로젝트 키·클라이언트 토큰은 사용하지 않습니다.
 
 ## 빌드와 실행
 

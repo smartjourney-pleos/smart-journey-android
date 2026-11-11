@@ -5,6 +5,7 @@ package com.smartjourney.vehicle.core
 // - 화면·도메인은 이 인터페이스만 쓴다. (시연·테스트용 FakeNaviGateway로 교체 가능)
 
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.withTimeoutOrNull
 
 data class Place(
     val latitude: Double,
@@ -43,5 +44,24 @@ interface NaviGateway {
      */
     suspend fun setRoute(dest: Place, waypoints: List<Place> = emptyList()): Result<Unit>
 
+    /** 내비 화면을 전경으로 요청한다. 지도 타일을 제공하거나 앱 안에 지도를 삽입하는 API는 아니다. */
+    suspend fun showNavigation(): Result<Unit>
+
     fun release()
+}
+
+/** 경로 설정과 화면 전환은 별개다. 화면 요청 실패 때문에 이미 설정된 경로를 실패로 바꾸지 않는다. */
+suspend fun NaviGateway.setRouteAndShowNavigation(
+    dest: Place,
+    waypoints: List<Place> = emptyList(),
+    onDisplayFailure: (Throwable) -> Unit = {},
+): Result<Unit> {
+    val route = withTimeoutOrNull(20_000) { setRoute(dest, waypoints) }
+        ?: Result.failure(NaviException("내비 경로 탐색 응답 없음"))
+    if (route.isSuccess) {
+        val display = withTimeoutOrNull(5_000) { showNavigation() }
+            ?: Result.failure(NaviException("내비 화면 전환 응답 없음"))
+        display.exceptionOrNull()?.let(onDisplayFailure)
+    }
+    return route
 }

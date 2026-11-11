@@ -29,6 +29,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -36,6 +37,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.smartjourney.vehicle.AppGraph
 import com.smartjourney.vehicle.BuildConfig
 import com.smartjourney.vehicle.RETENTION_DAYS
+import com.smartjourney.vehicle.core.readServiceVersions
 import com.smartjourney.vehicle.domain.AlightDetector
 import com.smartjourney.vehicle.domain.ArrivalResult
 import com.smartjourney.vehicle.domain.QueueStatus
@@ -179,6 +181,22 @@ private fun SetupScreen(graph: AppGraph) {
                 style = Type.Title,
             )
         }
+    }
+
+    val context = LocalContext.current
+    val versions = remember(context) { readServiceVersions(context) }
+    Panel {
+        Text("연결 환경", style = Type.Title)
+        versions.forEach { version ->
+            Text("${version.label} SDK ${version.sdk} · 서비스 ${version.installed ?: "설치되지 않음"}", style = Type.Label)
+            if (!version.ok) {
+                Text(
+                    "${version.label} 서비스 ${version.required} 이상이 필요해요. 설치 또는 업데이트 후 실제 연결을 확인해 주세요.",
+                    style = Type.Label, color = Palette.Red,
+                )
+            }
+        }
+        Text("데모 장소의 웨이팅 정보는 시연용이에요", style = Type.Label)
     }
 
     error?.let { Text(it, style = Type.Body, color = Palette.Red) }

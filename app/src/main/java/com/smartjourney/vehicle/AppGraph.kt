@@ -6,7 +6,6 @@ import android.util.Log
 import com.smartjourney.vehicle.core.ArrivalEvent
 import com.smartjourney.vehicle.core.CarUxDrivingStateGateway
 import com.smartjourney.vehicle.core.DrivingStateGateway
-import com.smartjourney.vehicle.core.NaviException
 import com.smartjourney.vehicle.core.NaviGateway
 import com.smartjourney.vehicle.core.NaviGatewayFactory
 import com.smartjourney.vehicle.core.Place
@@ -14,6 +13,7 @@ import com.smartjourney.vehicle.core.PleosVehicleGateway
 import com.smartjourney.vehicle.core.VehicleCaps
 import com.smartjourney.vehicle.core.VehicleGateway
 import com.smartjourney.vehicle.core.VehicleSnapshot
+import com.smartjourney.vehicle.core.setRouteAndShowNavigation
 import com.smartjourney.vehicle.data.FakeBackend
 import com.smartjourney.vehicle.demo.DemoController
 import com.smartjourney.vehicle.domain.Store
@@ -213,8 +213,9 @@ class AppSignals(
     /** 마지막 매장이 목적지, 그 앞 매장들이 경유지(최대 2개)다. */
     suspend fun setRoute(stops: List<Store>): Result<Unit> {
         val places = stops.map { it.toPlace() }
-        return withTimeoutOrNull(20_000) { navi.setRoute(places.last(), places.dropLast(1)) }
-            ?: Result.failure(NaviException("내비 응답 없음"))
+        return navi.setRouteAndShowNavigation(places.last(), places.dropLast(1)) { error ->
+            Log.w(TAG, "경로는 설정됐지만 내비 화면 전환 요청에 실패했어요", error)
+        }
     }
 
     private fun Store.toPlace() = Place(latitude, longitude, name, poiId, poiSubId, address)

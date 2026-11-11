@@ -1,0 +1,53 @@
+{
+  "checked_on": "2026-11-11",
+  "source": "Pleos Connect emulator navigation SearchManager.poiDetail response",
+  "sample_poi_ids_source": "https://github.com/Pleos-Playground/pleos-sample-navi-app/blob/main/app/src/main/java/ai/pleos/playground/navidevapp/data/sample/NaviTestData.kt",
+  "installed_services": {
+    "Vehicle": {
+      "sdk": "2.3.2",
+      "service": "2.3.22",
+      "minimum": "2.3.13"
+    },
+    "Navi": {
+      "sdk": "3.0.5",
+      "service": "3.0.4",
+      "minimum": "2.0.1"
+    }
+  },
+  "places": [
+    {
+      "status": "success",
+      "id": "36khp37hh8gqcm5nqhe5",
+      "name": "42dot",
+      "center": {
+        "lon": 127.09383464,
+        "lat": 37.41309722
+      },
+      "address": [
+        "경기도 성남시 수정구 창업로40번길 20"
+      ]
+    },
+    {
+      "status": "success",
+      "id": "36khp2hdj2cfcm5nqhe3",
+      "name": "소프트웨어드림센터",
+      "center": {
+        "lon": 127.094275,
+        "lat": 37.41310555
+      },
+      "address": [
+        "경기도 성남시 수정구 창업로40번길 20"
+      ]
+    }
+  ],
+  "navigation_check": {
+    "route": "42dot → 소프트웨어드림센터",
+    "poi_detail": "Both POIs returned status=success, total=1",
+    "first_trip": {
+      "distance_m": 49,
+      "eta_seconds": 8
+    },
+    "http_400_observed": false,
+    "note": "SDK sample coordinates were outdated; address and coordinates above match live navigation POI details."
+  }
+}

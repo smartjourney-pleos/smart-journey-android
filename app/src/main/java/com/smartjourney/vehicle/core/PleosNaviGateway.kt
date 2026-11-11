@@ -4,6 +4,7 @@ import ai.pleos.playground.navi.constants.NaviErrorCode
 import ai.pleos.playground.navi.constants.RouteOption
 import ai.pleos.playground.navi.constants.WaypointIndex
 import ai.pleos.playground.navi.data.DestinationArrivedInfo
+import ai.pleos.playground.navi.data.NavigationScreenRequest
 import ai.pleos.playground.navi.data.RequestWaypointInfo
 import ai.pleos.playground.navi.data.RouteInfo
 import ai.pleos.playground.navi.data.RouteStartInfo
@@ -165,6 +166,20 @@ class PleosNaviGateway(context: Context) : NaviGateway {
         } finally {
             pendingRoute = null
             pendingStarted = null
+        }
+    }
+
+    override suspend fun showNavigation(): Result<Unit> {
+        return try {
+            withTimeoutOrNull(5_000) {
+                connected.await()
+                navi.requestNavigationScreen(NavigationScreenRequest.Foreground)
+                Result.success(Unit)
+            } ?: Result.failure(NaviException("내비 화면 연결 응답 없음"))
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            Result.failure(error)
         }
     }
 

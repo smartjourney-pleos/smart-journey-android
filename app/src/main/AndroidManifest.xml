@@ -8,6 +8,8 @@
     <!-- NaviHelper: 정보 조회(NAVI_ROUTE), 경로 요청·변경(NAVI_ROUTE_SEARCH) -->
     <uses-permission android:name="pleos.car.permission.NAVI_ROUTE" />
     <uses-permission android:name="pleos.car.permission.NAVI_ROUTE_SEARCH" />
+    <!-- 경로 설정 후 내장 내비 화면을 전경으로 요청한다 (NaviHelper.requestNavigationScreen, normal). -->
+    <uses-permission android:name="pleos.car.permission.NAVI_CUSTOM_MAP" />
 
     <uses-permission android:name="android.permission.INTERNET" />
 
@@ -15,6 +17,12 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+
+    <!-- 시작 화면에서 설치된 SDK 서비스 버전을 확인한다 (Android 11+ package visibility). -->
+    <queries>
+        <package android:name="ai.pleos.playground.service.vehicle" />
+        <package android:name="ai.pleos.playground.service.navi" />
+    </queries>
 
     <application
         android:name=".SmartJourneyApp"

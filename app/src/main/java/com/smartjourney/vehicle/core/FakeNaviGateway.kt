@@ -30,5 +30,8 @@ class FakeNaviGateway : NaviGateway {
         return routeResult
     }
 
+    override suspend fun showNavigation(): Result<Unit> =
+        Result.failure(NaviException("실제 Pleos 내비 서비스가 없는 환경에서는 내비 화면을 열 수 없어요"))
+
     override fun release() = Unit
 }

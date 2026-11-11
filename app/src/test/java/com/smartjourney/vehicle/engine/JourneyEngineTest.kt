@@ -39,7 +39,7 @@ class JourneyEngineTest {
     }
 
     private val signals = FakeSignals()
-    private val backend = FakeBackend() // A 맛집: 현장 6팀 × 5분 = 대기 30분, 도착 여유 10분
+    private val backend = FakeBackend() // 첫 장소: 현장 6팀 × 5분 = 대기 30분, 도착 여유 10분
 
     private suspend fun TestScope.startedEngine(stores: Int = 1): JourneyEngine {
         val engine = JourneyEngine(signals, backend, backgroundScope, now = { testScheduler.currentTime })
@@ -86,7 +86,7 @@ class JourneyEngineTest {
         assertEquals(ArrivalResult.CONFIRMED, stop.arrival)
         assertEquals(3, stop.alighted)
         assertTrue(backend.received.value.any { "3/4명 하차" in it })
-        assertEquals("A 맛집 · 3/4명 하차 확인", engine.state.value.statusLine())
+        assertEquals("${backend.stores()[0].name} · 3/4명 하차 확인", engine.state.value.statusLine())
     }
 
     @Test
@@ -138,7 +138,7 @@ class JourneyEngineTest {
         backend.seat(waitingId)
         runCurrent()
         assertEquals(1, engine.state.value.index)
-        assertEquals("B 카페", engine.state.value.current?.store?.name)
+        assertEquals(backend.stores()[1].name, engine.state.value.current?.store?.name)
         assertEquals(StopPhase.SEATED, engine.state.value.stops[0].phase)
         assertTrue(engine.state.value.active)
     }
@@ -151,11 +151,11 @@ class JourneyEngineTest {
         engine.approve()
         runCurrent()
 
-        signals.arrive.tryEmit(Arrival.Destination) // 마지막 매장(B 카페) 도착 → 지금은 A 맛집
+        signals.arrive.tryEmit(Arrival.Destination) // 마지막 장소 도착 → 지금은 첫 장소
         runCurrent()
         assertEquals(null, engine.state.value.alight)
 
-        signals.arrive.tryEmit(Arrival.Waypoint(1)) // 첫 경유지 = A 맛집
+        signals.arrive.tryEmit(Arrival.Waypoint(1)) // 첫 경유지 = 첫 장소
         runCurrent()
         assertEquals(com.smartjourney.vehicle.domain.AlightDetector.State.WAIT_STOP, engine.state.value.alight)
     }

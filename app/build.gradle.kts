@@ -18,6 +18,8 @@ android {
         // 심사 요청·배포 때마다 반드시 올린다 (Pleos 앱 버전 관리 정책). Gleo schema.json의 version과 맞춘다.
         versionCode = 1
         versionName = "0.1.0"
+        buildConfigField("String", "VEHICLE_SDK_VERSION", "\"${libs.versions.pleosVehicle.get()}\"")
+        buildConfigField("String", "NAVI_SDK_VERSION", "\"${libs.versions.pleosNaviHelper.get()}\"")
     }
 
     // 배포용 서명 (Pleos 앱 보안 가이드: 디버그 인증서 금지). 키 정보는 환경변수나 local.properties에서만 읽는다.

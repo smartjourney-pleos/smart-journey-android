@@ -101,7 +101,7 @@ fun DemoPanel(graph: AppGraph, journey: JourneyState, modifier: Modifier = Modif
         Section("매장 (POS 역할)") {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
-                    "${store?.name ?: "A 맛집"} 현장 ${queue?.aheadTeams ?: 0}팀 · ${queue?.estimatedWaitMin ?: 0}분",
+                    "${store?.name ?: "첫 데모 장소"} 현장 ${queue?.aheadTeams ?: 0}팀 · ${queue?.estimatedWaitMin ?: 0}분",
                     Modifier.weight(1f), fontSize = 22.sp, fontWeight = FontWeight.SemiBold,
                 )
                 SmallButton("−1", { graph.backend.addWalkIn(storeId, -1) })

@@ -36,15 +36,25 @@ class FakeBackend : WaitingBackend {
     private val minutesPerTeam = 5
     private val arrivalBufferMin = 10
 
-    // 데모 매장. 에뮬레이터 기본 위치에서 내비 경로가 잡히는 좌표다.
+    // 실제 장소명·주소·좌표·POI를 함께 사용해 내비의 장소 조회와 앱의 표시를 일치시킨다.
+    // POI 출처: Pleos-Playground/pleos-sample-navi-app, data/sample/NaviTestData.kt.
+    // 주소·좌표는 2026-11-11 에뮬레이터 내비 poiDetail 응답으로 확인했다 (샘플의 42dot 주소는 이전 소재지).
+    // 공식 샘플에서 확인한 두 장소만 제공한다. 웨이팅은 실제 영업 정보가 아닌 시연 데이터다.
     private val demoStores = listOf(
-        Store(1, "A 맛집", "서울 중구 · 데모 매장", 37.5663, 126.9779),
-        Store(2, "B 카페", "서울 용산구 · 데모 매장", 37.5509, 126.9882),
-        Store(3, "C 디저트", "서울 강남구 · 데모 매장", 37.5126, 127.0590),
+        Store(
+            1, "42dot", "경기도 성남시 수정구 창업로40번길 20",
+            37.41309722, 127.09383464,
+            poiId = "36khp37hh8gqcm5nqhe5", poiSubId = "0",
+        ),
+        Store(
+            2, "소프트웨어드림센터", "경기도 성남시 수정구 창업로40번길 20",
+            37.41310555, 127.094275,
+            poiId = "36khp2hdj2cfcm5nqhe3", poiSubId = "0",
+        ),
     )
 
     /** 매장별 현장 대기 팀 수 */
-    private val walkIns = MutableStateFlow(mapOf(1L to 6, 2L to 3, 3L to 0))
+    private val walkIns = MutableStateFlow(mapOf(1L to 6, 2L to 3))
     private val waitings = MutableStateFlow<Map<String, Waiting>>(emptyMap())
     private val byIdempotencyKey = mutableMapOf<String, String>()
     private var ticketSeq = 11
