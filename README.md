@@ -84,7 +84,7 @@ adb shell appops set --user 10 com.smartjourney.vehicle SYSTEM_ALERT_WINDOW allo
 - 앱이 내비 뒤에 있어도 포그라운드 서비스가 떠 있으면 엔진이 멈추지 않습니다.
 - `CarUxRestrictionsManager` 읽기가 됩니다(P단 정차에서 규제 없음). 도어 "닫힘" 값은 네 문 모두 0입니다.
 
-지도·API 키·환경설정 구분과 11/11 기기 재현 결과는 [내비 화면과 환경설정](docs/navigation-and-env.md)을 참고하세요. `.env.example`은 참고 목록이며 현재 빌드가 `.env`를 읽거나 APK에 주입하지 않습니다. Vehicle/NaviHelper 연동에 프로젝트 키·클라이언트 토큰은 사용하지 않습니다.
+11/11 기기 내비 조회 결과는 [실행 환경 검증 기록](docs/verification/pleos-runtime-2026-11-11.json)을 참고하세요. `.env.example`은 참고 목록이며 현재 빌드가 `.env`를 읽거나 APK에 주입하지 않습니다. Vehicle/NaviHelper 연동에 프로젝트 키·클라이언트 토큰은 사용하지 않습니다.
 
 ## 빌드와 실행
 
@@ -100,6 +100,10 @@ Android Studio에서 이 폴더를 열면 됩니다. 터미널에서는 다음�
 
 `local.properties`(Android SDK 경로)는 커밋하지 않으므로 처음 한 번 `sdk.dir=<SDK 경로>`를 직접 만들거나 Android Studio가 만들게 하세요.
 Pleos Connect Emulator 설정은 Pleos 공식 문서(Getting Started)를 따릅니다. 에뮬레이터에서 로컬 서버 주소는 `http://10.0.2.2:8080`입니다.
+
+## 개발 규칙
+
+Pleos 관련 구현·검토·테스트는 [공통 개발 규칙](docs/development/pleos-connect-rules.md)을 따릅니다. 제공된 Pleos 아카이브의 필수·권장 사항과 프로젝트 자체 기준을 구분하고 출처를 기록했습니다. 자동 작업 도구는 [AGENTS.md](AGENTS.md), Claude는 [CLAUDE.md](CLAUDE.md)를 진입점으로 사용합니다.
 
 ## 브랜치 규칙
 

@@ -1,5 +1,6 @@
 package com.smartjourney.vehicle.ui
 
+import android.util.Log
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -81,11 +82,12 @@ fun AppRoot(graph: AppGraph) {
                         Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(PleosSpace.Page),
                         verticalArrangement = Arrangement.spacedBy(PleosSpace.Section),
                     ) {
+                        // 주행 규제가 동의보다 먼저: 주행 중에는 동의 버튼도 보이지 않는다
                         when {
-                            !consented -> ConsentScreen(onAgree = { graph.setConsent(true) })
-                            journey.active && restricted -> DrivingScreen(journey)
-                            journey.active -> ProgressScreen(graph, journey)
+                            restricted && journey.active -> DrivingScreen(journey)
                             restricted -> LockedScreen()
+                            !consented -> ConsentScreen(onAgree = { graph.setConsent(true) })
+                            journey.active -> ProgressScreen(graph, journey)
                         }
                     }
                 }
@@ -115,25 +117,32 @@ fun AppRoot(graph: AppGraph) {
 @Composable
 private fun TopBar(restricted: Boolean, showDemo: Boolean, onToggleDemo: () -> Unit) {
     Surface(color = Palette.Surface) {
-        Column {
-            Row(
-                Modifier.fillMaxWidth().padding(start = 40.dp, end = 24.dp, top = 32.dp, bottom = 24.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(24.dp),
-            ) {
-                Surface(shape = RoundedCornerShape(20.dp), color = Palette.Primary, modifier = Modifier.size(80.dp)) {
-                    Icon(painterResource(R.drawable.ic_launcher_foreground), null, tint = Palette.OnPrimary)
+        BoxWithConstraints {
+            // 좁은 창(800dp 미만)은 규제 배지를 둘째 줄로 내려 앱명·부제 폭을 확보한다
+            val narrow = maxWidth < 800.dp
+            Column {
+                Row(
+                    Modifier.fillMaxWidth().padding(start = 40.dp, end = 24.dp, top = 32.dp, bottom = if (narrow && restricted) 12.dp else 24.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(24.dp),
+                ) {
+                    Surface(shape = RoundedCornerShape(20.dp), color = Palette.Primary, modifier = Modifier.size(80.dp)) {
+                        Icon(painterResource(R.drawable.ic_launcher_foreground), null, tint = Palette.OnPrimary)
+                    }
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("스마트 저니", style = Type.Title, maxLines = 1)
+                        Text(if (restricted) "주행 중 · 안전하게 이동하세요" else "정차 중 · 다음 여정을 준비하세요", style = Type.Caption)
+                    }
+                    if (restricted && !narrow) Badge("주행 규제 적용 중", Palette.Orange)
+                    if (BuildConfig.DEBUG) {
+                        SmallButton(if (showDemo) "데모 닫기" else "데모", onToggleDemo)
+                    }
                 }
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("스마트 저니", style = Type.Title, maxLines = 1)
-                    Text(if (restricted) "주행 중 · 안전하게 이동하세요" else "정차 중 · 다음 여정을 준비하세요", style = Type.Caption)
+                if (restricted && narrow) {
+                    Badge("주행 규제 적용 중", Palette.Orange, Modifier.padding(start = 40.dp, bottom = 24.dp))
                 }
-                if (restricted) Badge("주행 규제 적용 중", Palette.Orange)
-                if (BuildConfig.DEBUG) {
-                    SmallButton(if (showDemo) "데모 닫기" else "데모", onToggleDemo)
-                }
+                HorizontalDivider(color = Palette.Line)
             }
-            HorizontalDivider(color = Palette.Line)
         }
     }
 }
@@ -156,12 +165,18 @@ private fun ConsentScreen(onAgree: () -> Unit) {
             }
         }
         HorizontalDivider(color = Palette.Line)
+        Text("도착 시간에 맞춰 웨이팅을 걸고, 도착·하차를 매장에 알리는 데만 써요", style = Type.Body)
         Text("위치 좌표와 이동 경로는 보내지 않아요", style = Type.Body)
         Text("받는 곳: 스마트 저니 서버 · 웨이팅한 매장 · 보관: ${RETENTION_DAYS}일 뒤 삭제", style = Type.Label)
+        Text("동의하지 않으면 웨이팅 걸기와 도착 알림을 쓸 수 없어요. 차량 내비는 그대로 쓸 수 있어요.", style = Type.Caption)
     }
     BigButton("동의하고 시작", onAgree, Modifier.fillMaxWidth())
     BigButton("나중에", { later = true }, Modifier.fillMaxWidth(), primary = false)
-    Text(if (later) "동의하기 전에는 웨이팅을 걸 수 없어요" else "설정에서 언제든 데이터 전송 동의를 철회할 수 있어요", style = Type.Caption)
+    Text(
+        if (later) "동의하기 전에는 웨이팅을 걸 수 없어요"
+        else "동의한 뒤에도 여정 준비 화면 아래 '데이터 전송 동의 철회'로 언제든 철회할 수 있어요",
+        style = Type.Caption,
+    )
 }
 
 // ---------- V-02 ~ V-05 여정 만들기 (정차 중) ----------
@@ -194,7 +209,7 @@ private fun SetupScreen(graph: AppGraph, modifier: Modifier = Modifier) {
                     Panel {
                         Text("오늘의 탑승 인원", style = Type.Title)
                         Text(
-                            if (manual != null) "직접 설정한 인원이에요" else if (sensed != null) "좌석 센서로 확인했어요" else "좌석을 확인하고 있어요",
+                            if (manual != null) "직접 설정한 인원이에요" else if (sensed != null) "좌석 센서 기준 제안값이에요" else "좌석을 확인하고 있어요",
                             style = Type.Label,
                         )
                         PartyStepper(party, onChange = { manual = it })
@@ -210,7 +225,8 @@ private fun SetupScreen(graph: AppGraph, modifier: Modifier = Modifier) {
                             Text("방문지 선택", Modifier.weight(1f), style = Type.Title)
                             Text("${picked.size} / 3", style = Type.Label)
                         }
-                        Text("방문할 순서대로 최대 3곳을 골라 주세요", style = Type.Caption)
+                        Text("누른 순서가 방문 순서예요 (최대 3곳). 다시 누르면 빠지고 뒤 순서가 당겨져요", style = Type.Caption)
+                        DemoWaitingNotice()
                         stores.forEach { store ->
                             val order = picked.indexOf(store.id)
                             StoreRow(graph, store, order, canSelect = picked.size < 3 || order >= 0) {
@@ -250,12 +266,17 @@ private fun SetupScreen(graph: AppGraph, modifier: Modifier = Modifier) {
                         )
                     }
                 }
-                Text("데모 장소의 웨이팅 정보는 시연용이에요", style = Type.Caption)
             }
         }
         Surface(color = Palette.Surface) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 40.dp, vertical = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                val blocker = when {
+                    party == null -> "탑승 인원을 확인하는 중이에요. 직접 정해도 돼요"
+                    picked.isEmpty() -> "방문지를 1곳 이상 골라 주세요"
+                    else -> null
+                }
                 error?.let { Text(it, style = Type.Body, color = Palette.Red) }
+                    ?: blocker?.takeIf { !starting }?.let { Text(it, style = Type.Label) }
                 BigButton(
                     text = if (starting) "내비에 경로를 넣는 중…" else "여정 시작",
                     onClick = {
@@ -266,11 +287,15 @@ private fun SetupScreen(graph: AppGraph, modifier: Modifier = Modifier) {
                         graph.scope.launch {
                             val result = graph.startJourney(party ?: 1, stops)
                             starting = false
-                            if (result.isFailure) error = "내비에 넣지 못했어요. 다시 눌러 주세요 (${result.exceptionOrNull()?.message})"
+                            result.exceptionOrNull()?.let {
+                                if (BuildConfig.DEBUG) Log.w("SJ", "여정 시작 실패", it)
+                                error = "내비에 경로를 넣지 못했어요. 내비가 켜져 있는지 확인하고 다시 눌러 주세요"
+                            }
                         }
                     },
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = party != null && picked.isNotEmpty() && !starting,
+                    enabled = blocker == null,
+                    loading = starting,
                 )
                 TextButton({ graph.setConsent(false) }) { Text("데이터 전송 동의 철회", fontSize = 20.sp, color = Palette.Muted) }
             }
@@ -317,22 +342,33 @@ private fun waitText(queue: QueueStatus) =
 private fun ProgressScreen(graph: AppGraph, journey: JourneyState) {
     val stop = journey.current ?: return
     Text("여정 현황 · 탑승 ${journey.partySize}명", style = Type.Label)
+    DemoWaitingNotice()
     Panel {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             Text(stop.store.name, Modifier.weight(1f), style = Type.Title)
             PhaseBadge(stop.phase)
         }
         Text(journey.statusLine().substringAfter(" · "), style = Type.Body)
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-            val waiting = stop.waiting
-            if (waiting == null) {
-                TimeBlock(journey.remainingMin?.toString() ?: "–", "분", "도착까지", Modifier.weight(1f))
-                TimeBlock(journey.queue?.estimatedWaitMin?.toString() ?: "–", "분", "예상 대기", Modifier.weight(1f))
-                TimeBlock(journey.minutesUntilPrompt?.toString() ?: "0", "분", "알림까지", Modifier.weight(1f))
+        val waiting = stop.waiting
+        val stats = if (waiting == null) listOf(
+            Triple(journey.remainingMin?.toString() ?: "–", "분", "도착까지"),
+            Triple(journey.queue?.estimatedWaitMin?.toString() ?: "–", "분", "예상 대기"),
+            Triple(journey.minutesUntilPrompt?.toString() ?: "0", "분", "알림까지"),
+        ) else listOf(
+            Triple(waiting.ticketNo.toString(), "번", "내 번호"),
+            Triple(waiting.aheadTeams.toString(), "팀", "앞에"),
+            Triple(journey.remainingMin?.toString() ?: "–", "분", "도착까지"),
+        )
+        // 지표 영역이 600dp보다 좁으면 세 칸이 붙어 숫자와 단위가 겹치니 세로로 쌓는다
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            if (maxWidth >= 600.dp) {
+                Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                    stats.forEach { (value, unit, label) -> TimeBlock(value, unit, label, Modifier.weight(1f)) }
+                }
             } else {
-                TimeBlock(waiting.ticketNo.toString(), "번", "내 번호", Modifier.weight(1f))
-                TimeBlock(waiting.aheadTeams.toString(), "팀", "앞에", Modifier.weight(1f))
-                TimeBlock(journey.remainingMin?.toString() ?: "–", "분", "도착까지", Modifier.weight(1f))
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    stats.forEach { (value, unit, label) -> TimeBlock(value, unit, label, Modifier.fillMaxWidth()) }
+                }
             }
         }
     }
@@ -381,12 +417,13 @@ private fun AlightPanel(state: AlightDetector.State, stop: StopState, onArrived:
         when {
             stop.arrival == ArrivalResult.CONFIRMED -> {
                 Text(
-                    "${stop.alighted} / ${stop.waiting?.partySize}명 하차 확인 · 매장에 알렸어요",
+                    "약 ${stop.alighted}명 하차 · 일행 ${stop.waiting?.partySize}명",
                     style = Type.Headline, color = Palette.Green,
                 )
-                Text("주차하고 따라가세요 · 몇 분이 내렸는지만 확인해요", style = Type.Label)
+                Text("좌석 센서로 추정한 인원이에요 · 앱 안의 시연용 도착 기록이에요", style = Type.Label)
+                Text("주차하고 따라가세요", style = Type.Label)
             }
-            stop.arrival == ArrivalResult.MANUAL -> Text("도착을 알렸어요 (고객 확인)", style = Type.Title)
+            stop.arrival == ArrivalResult.MANUAL -> Text("도착을 기록했어요 (직접 확인 · 앱 안의 시연용 도착 기록)", style = Type.Title)
             manual -> {
                 Text("자동으로 확인하지 못했어요. 도착했으면 눌러 주세요", style = Type.Body)
                 BigButton("도착했어요", onArrived, Modifier.fillMaxWidth())
@@ -394,6 +431,12 @@ private fun AlightPanel(state: AlightDetector.State, stop: StopState, onArrived:
             else -> Text("내리는 인원 확인 중…", style = Type.Body)
         }
     }
+}
+
+/** 백엔드는 차량 신호 모드와 상관없이 항상 FakeBackend다. */
+@Composable
+private fun DemoWaitingNotice() {
+    Text("웨이팅·대기 정보는 앱 안의 시연용 데이터예요. 실제 매장에는 접수되지 않아요", style = Type.Label, color = Palette.Orange)
 }
 
 @Composable
@@ -422,7 +465,10 @@ private fun DrivingScreen(journey: JourneyState) {
     val stop = journey.current ?: return
     Panel {
         Text(stop.store.name, style = Type.Headline)
-        Text(journey.statusLine().substringAfter(" · "), style = Type.Display)
+        // 좁은 창에서 Display(60sp)는 짧은 문장도 어절 중간에서 갈라지므로 한 단계 줄인다
+        BoxWithConstraints {
+            Text(journey.statusLine().substringAfter(" · "), style = if (maxWidth < 600.dp) Type.Headline else Type.Display)
+        }
         Text("안전을 위해 차를 세운 뒤 사용할 수 있어요", style = Type.Label)
     }
 }

@@ -4,6 +4,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
@@ -27,6 +29,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -49,20 +53,34 @@ fun BigButton(
     modifier: Modifier = Modifier,
     primary: Boolean = true,
     enabled: Boolean = true,
+    loading: Boolean = false,
 ) {
+    val interactive = enabled && !loading
     Button(
-        onClick, modifier.heightIn(min = 100.dp), enabled = enabled,
+        onClick,
+        modifier.heightIn(min = 100.dp).semantics {
+            if (loading) stateDescription = "처리 중"
+        },
+        enabled = interactive,
         shape = RoundedCornerShape(32.dp),
         colors = ButtonDefaults.buttonColors(
             containerColor = if (primary) Palette.Primary else Palette.Button,
             contentColor = if (primary) Palette.OnPrimary else Palette.Ink,
             disabledContainerColor = Palette.Button,
-            disabledContentColor = Palette.Ink.copy(alpha = 0.32f),
+            disabledContentColor = if (loading) Palette.Ink else Palette.Ink.copy(alpha = 0.32f),
         ),
-        border = if (enabled) null else BorderStroke(2.dp, Palette.Line),
+        border = if (interactive) null else BorderStroke(2.dp, Palette.Line),
         contentPadding = PaddingValues(horizontal = 40.dp, vertical = 16.dp),
     ) {
-        Text(text, style = Type.Title.copy(color = Color.Unspecified), textAlign = TextAlign.Center)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally),
+        ) {
+            if (loading) {
+                CircularProgressIndicator(Modifier.size(32.dp), color = Palette.Ink, strokeWidth = 3.dp)
+            }
+            Text(text, style = Type.Title.copy(color = Color.Unspecified), textAlign = TextAlign.Center)
+        }
     }
 }
 
@@ -124,11 +142,14 @@ fun PartyStepper(party: Int?, onChange: (Int) -> Unit, modifier: Modifier = Modi
 
 @Composable
 fun TimeBlock(value: String, unit: String, label: String, modifier: Modifier = Modifier) {
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(label, style = Type.Label)
-        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(value, style = Type.Display, maxLines = 1)
-            Text(unit, Modifier.padding(bottom = 14.dp), style = Type.Body, maxLines = 1)
+    BoxWithConstraints(modifier) {
+        val compact = maxWidth < 260.dp
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(label, style = Type.Label)
+            Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(value, style = if (compact) Type.Headline else Type.Display, maxLines = 1)
+                Text(unit, Modifier.padding(bottom = if (compact) 10.dp else 14.dp), style = Type.Body, maxLines = 1)
+            }
         }
     }
 }
