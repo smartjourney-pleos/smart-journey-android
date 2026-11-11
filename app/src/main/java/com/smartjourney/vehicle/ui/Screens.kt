@@ -2,36 +2,23 @@ package com.smartjourney.vehicle.ui
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
-import androidx.compose.runtime.remember
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.smartjourney.vehicle.R
+import com.smartjourney.vehicle.BuildConfig
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.smartjourney.vehicle.AppGraph
 import com.smartjourney.vehicle.domain.AlightDetector
@@ -51,78 +38,107 @@ fun AppRoot(graph: AppGraph) {
     val consented by graph.consented.collectAsStateWithLifecycle()
     val journey by graph.engine.state.collectAsStateWithLifecycle()
     val restricted by graph.signals.restricted.collectAsStateWithLifecycle(initialValue = false)
-    var showDemo by rememberSaveable { mutableStateOf(true) }
+    var showDemo by rememberSaveable { mutableStateOf(false) }
 
-    BoxWithConstraints(Modifier.fillMaxSize().background(Palette.Background)) {
-        val wide = maxWidth >= 1000.dp
-        val main: @Composable (Modifier) -> Unit = { modifier ->
-            Column(
-                modifier.verticalScroll(rememberScrollState()).padding(32.dp),
-                verticalArrangement = Arrangement.spacedBy(24.dp),
-            ) {
-                TopBar(restricted, showDemo, onToggleDemo = { showDemo = !showDemo })
-                when {
-                    !consented -> ConsentScreen(onAgree = { graph.setConsent(true) })
-                    journey.active && restricted -> DrivingScreen(journey)
-                    journey.active -> ProgressScreen(graph, journey)
-                    restricted -> LockedScreen()
-                    else -> SetupScreen(graph)
+    Surface(Modifier.fillMaxSize(), color = Palette.Background) {
+        BoxWithConstraints(Modifier.fillMaxSize()) {
+            val wide = maxWidth >= 1400.dp
+            val main: @Composable (Modifier) -> Unit = { modifier ->
+                Column(modifier) {
+                    TopBar(restricted, showDemo, onToggleDemo = { showDemo = !showDemo })
+                    if (consented && !journey.active && !restricted) {
+                        SetupScreen(graph, Modifier.weight(1f))
+                    } else Column(
+                        Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(PleosSpace.Page),
+                        verticalArrangement = Arrangement.spacedBy(PleosSpace.Section),
+                    ) {
+                        when {
+                            !consented -> ConsentScreen(onAgree = { graph.setConsent(true) })
+                            journey.active && restricted -> DrivingScreen(journey)
+                            journey.active -> ProgressScreen(graph, journey)
+                            restricted -> LockedScreen()
+                        }
+                    }
                 }
             }
-        }
-        if (wide) {
-            Row(Modifier.fillMaxSize()) {
-                main(Modifier.weight(1f).fillMaxHeight())
-                if (showDemo) DemoPanel(graph, journey, Modifier.width(460.dp).fillMaxHeight())
-            }
-        } else {
-            // 세로 창(창 1개)에서는 패널을 아래에 둔다
-            Column(Modifier.fillMaxSize()) {
-                main(Modifier.weight(1f).fillMaxWidth())
-                if (showDemo) DemoPanel(graph, journey, Modifier.fillMaxWidth().heightIn(max = 420.dp))
+            if (wide) {
+                Row(Modifier.fillMaxSize()) {
+                    main(Modifier.weight(1f).fillMaxHeight())
+                    if (BuildConfig.DEBUG && showDemo) {
+                        VerticalDivider(Modifier.fillMaxHeight(), color = Palette.Line)
+                        DemoPanel(graph, journey, Modifier.width(540.dp).fillMaxHeight())
+                    }
+                }
+            } else {
+                Column(Modifier.fillMaxSize()) {
+                    main(Modifier.weight(1f).fillMaxWidth())
+                    if (BuildConfig.DEBUG && showDemo) {
+                        HorizontalDivider(color = Palette.Line)
+                        DemoPanel(graph, journey, Modifier.fillMaxWidth().heightIn(max = 420.dp))
+                    }
+                }
             }
         }
     }
 }
 
+/** Pleos Page Navigation: 40dp gutters, 80dp app icon, title, trailing actions. */
 @Composable
 private fun TopBar(restricted: Boolean, showDemo: Boolean, onToggleDemo: () -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text("스마트 저니", style = Type.Title)
-        Badge(if (restricted) "주행 중" else "정차 중", if (restricted) Palette.Orange else Palette.Green)
-        Spacer(Modifier.weight(1f))
-        TextButton(onToggleDemo) { Text(if (showDemo) "데모 패널 숨기기" else "데모 패널", fontSize = 20.sp) }
+    Surface(color = Palette.Surface) {
+        Column {
+            Row(
+                Modifier.fillMaxWidth().padding(start = 40.dp, end = 24.dp, top = 32.dp, bottom = 24.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(24.dp),
+            ) {
+                Surface(shape = RoundedCornerShape(20.dp), color = Palette.Primary, modifier = Modifier.size(80.dp)) {
+                    Icon(painterResource(R.drawable.ic_launcher_foreground), null, tint = Palette.OnPrimary)
+                }
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("스마트 저니", style = Type.Title, maxLines = 1)
+                    Text(if (restricted) "주행 중 · 안전하게 이동하세요" else "정차 중 · 다음 여정을 준비하세요", style = Type.Caption)
+                }
+                if (BuildConfig.DEBUG) {
+                    SmallButton(if (showDemo) "데모 닫기" else "데모", onToggleDemo)
+                }
+            }
+            HorizontalDivider(color = Palette.Line)
+        }
     }
 }
 
 // ---------- V-01 데이터 전송 동의 ----------
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ConsentScreen(onAgree: () -> Unit) {
     var later by rememberSaveable { mutableStateOf(false) }
-    Panel {
-        Text("매장에 이런 정보만 보내요", style = Type.Headline)
-        listOf("인원 수", "하차 인원 수", "도착 예상 시간(분)", "도착 여부", "웨이팅 정보").forEach {
-            Text("•  $it", style = Type.Body)
-        }
-        Text("위치 좌표와 이동 경로는 보내지 않아요", style = Type.Title, color = Palette.Primary)
-        Text("받는 곳: 스마트 저니 서버, 웨이팅한 매장", style = Type.Label)
-        Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-            BigButton("동의하고 시작", onAgree, Modifier.weight(2f))
-            BigButton("나중에", { later = true }, Modifier.weight(1f), primary = false)
-        }
-        Text(
-            if (later) "동의하기 전에는 웨이팅을 걸 수 없어요" else "설정에서 언제든 철회할 수 있어요",
-            style = Type.Label,
-        )
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("시작하기 전에", style = Type.Label)
+        Text("기다림은 줄이고,\n여정은 여유롭게", style = Type.Headline)
     }
+    Panel {
+        Text("웨이팅에 필요한 정보만 보내요", style = Type.Title)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            listOf("탑승 인원", "하차 인원", "도착 예상 시간", "도착 여부", "웨이팅 정보").forEach {
+                Badge(it, Palette.Gray)
+            }
+        }
+        HorizontalDivider(color = Palette.Line)
+        Text("위치 좌표와 이동 경로는 보내지 않아요", style = Type.Body)
+        Text("받는 곳: 스마트 저니 서버 · 웨이팅한 매장", style = Type.Label)
+    }
+    BigButton("동의하고 시작", onAgree, Modifier.fillMaxWidth())
+    BigButton("나중에", { later = true }, Modifier.fillMaxWidth(), primary = false)
+    Text(if (later) "동의하기 전에는 웨이팅을 걸 수 없어요" else "설정에서 언제든 데이터 전송 동의를 철회할 수 있어요", style = Type.Caption)
 }
 
 // ---------- V-02 ~ V-05 여정 만들기 (정차 중) ----------
 
 @OptIn(FlowPreview::class)
 @Composable
-private fun SetupScreen(graph: AppGraph) {
+private fun SetupScreen(graph: AppGraph, modifier: Modifier = Modifier) {
     val stores by produceState(emptyList<Store>()) { value = graph.backend.stores() }
     val support by graph.signals.support.collectAsStateWithLifecycle()
     val useDemo by graph.demo.enabled.collectAsStateWithLifecycle()
@@ -134,95 +150,115 @@ private fun SetupScreen(graph: AppGraph) {
     var error by remember { mutableStateOf<String?>(null) }
     val party = manual ?: sensed?.coerceAtLeast(1)
 
-    Panel {
-        Text("오늘의 탑승 인원", style = Type.Label)
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-            Text(party?.let { "${it}명" } ?: "좌석 확인 중…", style = Type.Display)
-            Spacer(Modifier.weight(1f))
-            BigButton("−", { manual = ((party ?: 2) - 1).coerceAtLeast(1) }, Modifier.width(110.dp), primary = false)
-            BigButton("+", { manual = ((party ?: 0) + 1).coerceAtMost(9) }, Modifier.width(110.dp), primary = false)
-        }
-        Text(
-            when {
-                manual != null -> "직접 수정했어요"
-                sensed != null -> "좌석 센서로 확인했어요"
-                else -> "좌석 값이 5초 동안 같으면 인원으로 제안해요"
-            },
-            style = Type.Body,
-        )
-        Text("짐이 사람으로 잡힐 수 있어요. 다르면 고쳐 주세요 · 어른과 아이는 구분하지 않아요", style = Type.Label)
-        Text(
-            buildString {
-                append(if (useDemo) "지금은 데모 신호를 쓰고 있어요" else "실제 차량 신호를 쓰고 있어요")
-                support?.let { append(" · 좌석 센서 ${mark(it.seat)} · 도어 센서 ${mark(it.door)} · 주행 상태 ${mark(it.drivingState)}") }
-            },
-            style = Type.Label,
-        )
-    }
+    Column(modifier.fillMaxWidth()) {
+        Column(
+            Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(PleosSpace.Page),
+            verticalArrangement = Arrangement.spacedBy(PleosSpace.Section),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("새 여정", style = Type.Label)
+                Text("어디로 떠나볼까요?", style = Type.Headline)
+            }
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                val passengers: @Composable () -> Unit = {
+                    Panel {
+                        Text("오늘의 탑승 인원", style = Type.Title)
+                        Text(
+                            if (manual != null) "직접 설정한 인원이에요" else if (sensed != null) "좌석 센서로 확인했어요" else "좌석을 확인하고 있어요",
+                            style = Type.Label,
+                        )
+                        PartyStepper(party, onChange = { manual = it })
+                        Text("짐이 탑승 인원으로 잡힐 수 있어요.\n인원이 다르면 직접 바꿔 주세요.", style = Type.Caption)
+                        if (useDemo) Badge("데모 신호 사용 중", Palette.Gray)
+                        else Text("실제 차량 신호 사용 중", style = Type.Caption)
+                        if (!useDemo && support?.seat == false) Text("좌석 센서를 지원하지 않아요. 인원을 직접 설정해 주세요.", style = Type.Caption)
+                    }
+                }
+                val destinations: @Composable () -> Unit = {
+                    Panel {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("방문지 선택", Modifier.weight(1f), style = Type.Title)
+                            Text("${picked.size} / 3", style = Type.Label)
+                        }
+                        Text("방문할 순서대로 최대 3곳을 골라 주세요", style = Type.Caption)
+                        stores.forEach { store ->
+                            val order = picked.indexOf(store.id)
+                            StoreRow(graph, store, order, canSelect = picked.size < 3 || order >= 0) {
+                                picked = if (order >= 0) picked - store.id else if (picked.size < 3) picked + store.id else picked
+                            }
+                        }
+                        if (picked.isNotEmpty()) {
+                            HorizontalDivider(color = Palette.Line)
+                            Text("오늘의 코스", style = Type.Caption)
+                            Text(picked.mapNotNull { id -> stores.find { it.id == id }?.name }.joinToString(" → "), style = Type.Body)
+                        }
+                    }
+                }
+                if (maxWidth >= 1100.dp) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(32.dp)) {
+                        Column(Modifier.weight(0.85f)) { passengers() }
+                        Column(Modifier.weight(1.4f)) { destinations() }
+                    }
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(32.dp)) {
+                        passengers()
+                        destinations()
+                    }
+                }
+            }
 
-    Panel {
-        Text("방문지 고르기 · 최대 3곳", style = Type.Label)
-        stores.forEach { store ->
-            val order = picked.indexOf(store.id)
-            StoreRow(graph, store, order) {
-                picked = if (order >= 0) picked - store.id else if (picked.size < 3) picked + store.id else picked
+        }
+        Surface(color = Palette.Surface) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 40.dp, vertical = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                error?.let { Text(it, style = Type.Body, color = Palette.Red) }
+                BigButton(
+                    text = if (starting) "내비에 경로를 넣는 중…" else "여정 시작",
+                    onClick = {
+                        val stops = picked.mapNotNull { id -> stores.find { it.id == id } }
+                        starting = true
+                        error = null
+                        // 내비가 앞으로 나오면서 이 화면이 멈춰도 끝까지 진행되도록 앱 범위에서 돌린다
+                        graph.scope.launch {
+                            val result = graph.startJourney(party ?: 1, stops)
+                            starting = false
+                            if (result.isFailure) error = "내비에 넣지 못했어요. 다시 눌러 주세요 (${result.exceptionOrNull()?.message})"
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = party != null && picked.isNotEmpty() && !starting,
+                )
+                TextButton({ graph.setConsent(false) }) { Text("데이터 전송 동의 철회", fontSize = 20.sp, color = Palette.Muted) }
             }
         }
-        if (picked.isNotEmpty()) {
-            Text(
-                "출발 → " + picked.mapNotNull { id -> stores.find { it.id == id }?.name }.joinToString(" → "),
-                style = Type.Title,
-            )
-        }
     }
-
-    error?.let { Text(it, style = Type.Body, color = Palette.Red) }
-    BigButton(
-        text = if (starting) "내비에 경로를 넣는 중…" else "여정 시작",
-        onClick = {
-            val stops = picked.mapNotNull { id -> stores.find { it.id == id } }
-            starting = true
-            error = null
-            // 내비가 앞으로 나오면서 이 화면이 멈춰도 끝까지 진행되도록 앱 범위에서 돌린다
-            graph.scope.launch {
-                val result = graph.startJourney(party ?: 1, stops)
-                starting = false
-                if (result.isFailure) error = "내비에 넣지 못했어요. 다시 눌러 주세요 (${result.exceptionOrNull()?.message})"
-            }
-        },
-        modifier = Modifier.fillMaxWidth(),
-        enabled = party != null && picked.isNotEmpty() && !starting,
-    )
-    TextButton({ graph.setConsent(false) }) { Text("데이터 전송 동의 철회", fontSize = 20.sp, color = Palette.Muted) }
 }
 
-private fun mark(supported: Boolean) = if (supported) "사용 가능" else "미지원"
-
 @Composable
-private fun StoreRow(graph: AppGraph, store: Store, order: Int, onClick: () -> Unit) {
+private fun StoreRow(graph: AppGraph, store: Store, order: Int, canSelect: Boolean, onClick: () -> Unit) {
     val queue by remember(store.id) { graph.backend.queueStatus(store.id) }.collectAsStateWithLifecycle(initialValue = null)
     val selected = order >= 0
     Surface(
-        onClick = onClick,
-        shape = RoundedCornerShape(20.dp),
-        color = if (selected) Palette.Primary.copy(alpha = 0.08f) else Palette.Background,
+        modifier = Modifier.fillMaxWidth().toggleable(value = selected, enabled = canSelect, role = Role.Checkbox, onValueChange = { onClick() }),
+        shape = RoundedCornerShape(24.dp),
+        color = if (selected) Palette.Button else Palette.Surface,
         border = BorderStroke(2.dp, if (selected) Palette.Primary else Palette.Line),
     ) {
         Row(
-            Modifier.fillMaxWidth().heightIn(min = 96.dp).padding(horizontal = 24.dp, vertical = 16.dp),
+            Modifier.fillMaxWidth().heightIn(min = 128.dp).padding(24.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(20.dp),
+            horizontalArrangement = Arrangement.spacedBy(24.dp),
         ) {
-            Text(
-                if (selected) "${order + 1}" else "＋",
-                fontSize = 30.sp, fontWeight = FontWeight.Bold,
-                color = if (selected) Palette.Primary else Palette.Muted,
-            )
-            Column(Modifier.weight(1f)) {
-                Text(store.name, style = Type.Title)
-                Text(store.address, style = Type.Label)
+            Surface(Modifier.size(56.dp), shape = RoundedCornerShape(16.dp), color = if (selected) Palette.Primary else Palette.Button) {
+                Box(contentAlignment = Alignment.Center) {
+                    if (selected) Text("${order + 1}", style = Type.Title, color = Palette.OnPrimary)
+                    else Icon(painterResource(R.drawable.pleos_plus), null, Modifier.size(44.dp), tint = Palette.Ink)
+                }
             }
-            queue?.let { Text(waitText(it), style = Type.Body) }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(store.name, style = Type.Title)
+                Text(store.address, style = Type.Caption)
+                queue?.let { Text(waitText(it), style = Type.Label.copy(color = Palette.Gray)) }
+            }
         }
     }
 }
@@ -235,24 +271,23 @@ private fun waitText(queue: QueueStatus) =
 @Composable
 private fun ProgressScreen(graph: AppGraph, journey: JourneyState) {
     val stop = journey.current ?: return
+    Text("여정 현황 · 탑승 ${journey.partySize}명", style = Type.Label)
     Panel {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            Text(stop.store.name, style = Type.Headline)
+            Text(stop.store.name, Modifier.weight(1f), style = Type.Title)
             PhaseBadge(stop.phase)
-            Spacer(Modifier.weight(1f))
-            Text("탑승 ${journey.partySize}명", style = Type.Body)
         }
-        Text(journey.statusLine().substringAfter(" · "), style = Type.Title)
-        Row(horizontalArrangement = Arrangement.spacedBy(56.dp)) {
+        Text(journey.statusLine().substringAfter(" · "), style = Type.Body)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
             val waiting = stop.waiting
             if (waiting == null) {
-                TimeBlock(journey.remainingMin?.toString() ?: "–", "분", "도착까지")
-                TimeBlock(journey.queue?.estimatedWaitMin?.toString() ?: "–", "분", "예상 대기")
-                TimeBlock(journey.minutesUntilPrompt?.toString() ?: "0", "분", "웨이팅 알림까지")
+                TimeBlock(journey.remainingMin?.toString() ?: "–", "분", "도착까지", Modifier.weight(1f))
+                TimeBlock(journey.queue?.estimatedWaitMin?.toString() ?: "–", "분", "예상 대기", Modifier.weight(1f))
+                TimeBlock(journey.minutesUntilPrompt?.toString() ?: "0", "분", "알림까지", Modifier.weight(1f))
             } else {
-                TimeBlock(waiting.ticketNo.toString(), "번", "내 번호")
-                TimeBlock(waiting.aheadTeams.toString(), "팀", "앞에")
-                TimeBlock(journey.remainingMin?.toString() ?: "–", "분", "도착까지")
+                TimeBlock(waiting.ticketNo.toString(), "번", "내 번호", Modifier.weight(1f))
+                TimeBlock(waiting.aheadTeams.toString(), "팀", "앞에", Modifier.weight(1f))
+                TimeBlock(journey.remainingMin?.toString() ?: "–", "분", "도착까지", Modifier.weight(1f))
             }
         }
     }
@@ -271,7 +306,7 @@ private fun ProgressScreen(graph: AppGraph, journey: JourneyState) {
             journey.stops.forEachIndexed { i, s ->
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     Text("${i + 1}", style = Type.Title, color = if (i == journey.index) Palette.Primary else Palette.Muted)
-                    Text(s.store.name, style = Type.Body)
+                    Text(s.store.name, Modifier.weight(1f), style = Type.Body)
                     PhaseBadge(s.phase)
                 }
             }
@@ -350,7 +385,7 @@ private fun DrivingScreen(journey: JourneyState) {
 @Composable
 private fun LockedScreen() {
     Panel {
-        Text("안전을 위해 차를 세운 뒤 사용할 수 있어요", style = Type.Headline)
+        Text("차를 세운 뒤\n이어서 이용해 주세요", style = Type.Headline)
         Text("인원 확인과 방문지 고르기는 정차 중에만 할 수 있어요", style = Type.Body)
     }
 }

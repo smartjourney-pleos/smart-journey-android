@@ -6,13 +6,15 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -22,7 +24,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.smartjourney.vehicle.engine.Prompt
 import com.smartjourney.vehicle.engine.text
@@ -79,20 +84,31 @@ private fun ApprovalCard(prompt: Prompt, onPrimary: () -> Unit, onSecondary: () 
             value = System.currentTimeMillis()
         }
     }
-    // Pleos 앱 영역에서는 아래 화면이 비쳐 보이지 않아, 앱 영역 전체를 카드 한 장으로 쓴다 (C-04 ⓐ)
-    Box(Modifier.fillMaxSize().background(Palette.Background).padding(48.dp), contentAlignment = Alignment.Center) {
-        Surface(Modifier.widthIn(max = 1100.dp).fillMaxWidth(), shape = RoundedCornerShape(32.dp), color = Palette.Surface) {
-            Column(Modifier.padding(56.dp), verticalArrangement = Arrangement.spacedBy(28.dp)) {
+    // Pleos System Popup (67:29503): centered title, description and equal actions.
+    Box(Modifier.fillMaxSize().background(Palette.Background).padding(40.dp), contentAlignment = Alignment.Center) {
+        Surface(Modifier.widthIn(max = 1000.dp).fillMaxWidth(), shape = RoundedCornerShape(40.dp), color = Palette.Elevated) {
+            Column(Modifier.verticalScroll(rememberScrollState()).padding(40.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(24.dp)) {
                 Text("스마트 저니", style = Type.Label)
-                Text(text.title, style = Type.Display)
-                Text(text.detail, style = Type.Headline, color = Palette.Gray)
-                Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                    BigButton(text.primary, onPrimary, Modifier.weight(2f).heightIn(min = 120.dp))
-                    text.secondary?.let { BigButton(it, onSecondary, Modifier.weight(1f).heightIn(min = 120.dp), primary = false) }
+                Text(text.title, style = Type.Title.copy(fontSize = 40.sp, lineHeight = 52.sp, fontWeight = FontWeight.ExtraBold), textAlign = TextAlign.Center)
+                Text(text.detail, style = Type.Body, color = Palette.Gray, textAlign = TextAlign.Center)
+                BoxWithConstraints(Modifier.fillMaxWidth()) {
+                    if (maxWidth >= 720.dp) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                            BigButton(text.primary, onPrimary, Modifier.weight(1f))
+                            text.secondary?.let { BigButton(it, onSecondary, Modifier.weight(1f), primary = false) }
+                        }
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                            BigButton(text.primary, onPrimary, Modifier.fillMaxWidth())
+                            text.secondary?.let { BigButton(it, onSecondary, Modifier.fillMaxWidth(), primary = false) }
+                        }
+                    }
                 }
                 prompt.expiresAt?.let { expiresAt ->
                     val seconds = ((expiresAt - now) / 1_000).coerceAtLeast(0)
-                    Text("${seconds}초 뒤 자동으로 닫혀요", style = Type.Label)
+                    Text("${seconds}초 뒤 자동으로 닫혀요", style = Type.Caption)
                 }
             }
         }
