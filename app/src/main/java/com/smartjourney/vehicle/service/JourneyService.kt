@@ -98,9 +98,10 @@ class JourneyService : Service() {
 /** 알림 버튼(등록 / 나중에)을 엔진에 전달한다. */
 class PromptActionReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
+        val promptId = intent.getStringExtra(Notices.EXTRA_PROMPT_ID)
         when (intent.action) {
-            Notices.ACTION_APPROVE -> context.graph.engine.approve()
-            Notices.ACTION_DEFER -> context.graph.engine.defer()
+            Notices.ACTION_APPROVE -> context.graph.engine.approve(promptId = promptId)
+            Notices.ACTION_DEFER -> context.graph.engine.defer(promptId = promptId)
         }
     }
 }
@@ -114,6 +115,7 @@ object Notices {
     private const val CH_RESULT = "result"
     const val ACTION_APPROVE = "com.smartjourney.vehicle.action.APPROVE"
     const val ACTION_DEFER = "com.smartjourney.vehicle.action.DEFER"
+    const val EXTRA_PROMPT_ID = "com.smartjourney.vehicle.extra.PROMPT_ID"
 
     private const val IMMUTABLE = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
 
@@ -159,8 +161,8 @@ object Notices {
             .setOngoing(true)
             .setContentIntent(open)
             .setFullScreenIntent(open, true)
-            .addAction(0, text.primary, action(context, ACTION_APPROVE))
-            .apply { text.secondary?.let { addAction(0, it, action(context, ACTION_DEFER)) } }
+            .addAction(0, text.primary, action(context, ACTION_APPROVE, prompt.id))
+            .apply { text.secondary?.let { addAction(0, it, action(context, ACTION_DEFER, prompt.id)) } }
             .build()
         context.getSystemService(NotificationManager::class.java).notify(ID_PROMPT, notification)
     }
@@ -185,7 +187,12 @@ object Notices {
             .setContentTitle(title)
             .setContentText(text)
 
-    private fun action(context: Context, action: String) = PendingIntent.getBroadcast(
-        context, 0, Intent(context, PromptActionReceiver::class.java).setAction(action), IMMUTABLE,
+    private fun action(context: Context, action: String, promptId: String? = null) = PendingIntent.getBroadcast(
+        context,
+        if (action == ACTION_APPROVE) 100 else 101,
+        Intent(context, PromptActionReceiver::class.java).setAction(action).apply {
+            if (promptId != null) putExtra(EXTRA_PROMPT_ID, promptId)
+        },
+        IMMUTABLE,
     )
 }

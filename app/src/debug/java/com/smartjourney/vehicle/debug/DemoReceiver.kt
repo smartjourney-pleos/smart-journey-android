@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.util.Log
+import com.smartjourney.vehicle.BuildConfig
 import com.smartjourney.vehicle.engine.statusLine
 import com.smartjourney.vehicle.graph
 import kotlinx.coroutines.launch
@@ -19,6 +20,7 @@ import kotlinx.coroutines.launch
  */
 class DemoReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
+        if (!BuildConfig.DEBUG) return
         val g = context.graph
         val n = intent.getIntExtra("n", 1)
         val current = g.engine.state.value.current

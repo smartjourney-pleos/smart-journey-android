@@ -76,8 +76,9 @@ class JourneyEngine(
     }
 
     /** 카드의 주 버튼: 등록 / 바꾸기 / 도착했어요 / 확인 */
-    fun approve(method: ApprovalMethod = ApprovalMethod.TOUCH) {
+    fun approve(method: ApprovalMethod = ApprovalMethod.TOUCH, promptId: String? = null) {
         val prompt = _state.value.prompt ?: return
+        if (promptId != null && prompt.id != promptId) return
         promptTimeout?.cancel()
         when (prompt.kind) {
             Prompt.Kind.GOLDEN_TIME -> register(prompt, method)
@@ -92,8 +93,9 @@ class JourneyEngine(
     }
 
     /** 카드의 보조 버튼, 닫기, 60초 무응답 */
-    fun defer() {
+    fun defer(promptId: String? = null) {
         val prompt = _state.value.prompt ?: return
+        if (promptId != null && prompt.id != promptId) return
         promptTimeout?.cancel()
         if (prompt.kind == Prompt.Kind.GOLDEN_TIME) {
             gate.onDeclined(_state.value.remainingMin ?: 0)
@@ -115,18 +117,23 @@ class JourneyEngine(
     /** 자동 확인에 실패했을 때 "도착했어요" */
     fun confirmManualArrival() = reportArrival(ArrivalResult.MANUAL, null)
 
-    fun end() {
+    fun end(revokedConsent: Boolean = false) {
         val s = _state.value
         if (!s.active) return
+        stopJob?.cancel()
         val stop = s.current
         val waiting = stop?.waiting
         if (waiting != null && stop.phase == StopPhase.REGISTERED) {
             val unconfirmed = arrived && !arrivalReported
             scope.launch {
-                // 도착은 했는데 인원을 확정하지 못했으면 성공으로 보내지 않고 "미확인"으로 알린다
                 runCatching {
-                    if (unconfirmed) backend.reportArrival(waiting.waitingId, ArrivalResult.UNCONFIRMED, null, waiting.partySize)
-                    else backend.cancel(waiting.waitingId)
+                    if (revokedConsent) {
+                        backend.cancel(waiting.waitingId)
+                    } else {
+                        // 도착은 했는데 인원을 확정하지 못했으면 성공으로 보내지 않고 "미확인"으로 알린다
+                        if (unconfirmed) backend.reportArrival(waiting.waitingId, ArrivalResult.UNCONFIRMED, null, waiting.partySize)
+                        else backend.cancel(waiting.waitingId)
+                    }
                 }
             }
         }

@@ -61,7 +61,7 @@ class AppGraph(private val context: Context) {
     val demo = DemoController(scope)
     val backend = FakeBackend()
     val signals = AppSignals(context, NaviGatewayFactory.create(context), demo, scope)
-    val engine = JourneyEngine(signals, backend, scope, logger = { Log.i(TAG, it) })
+    val engine = JourneyEngine(signals, backend, scope, logger = { if (BuildConfig.DEBUG) Log.i(TAG, it) })
 
     private val prefs = context.getSharedPreferences("smart_journey", Context.MODE_PRIVATE)
 
@@ -71,7 +71,7 @@ class AppGraph(private val context: Context) {
     fun setConsent(agreed: Boolean) {
         prefs.edit().putBoolean("consented", agreed).apply()
         consented.value = agreed
-        if (!agreed) engine.end()
+        if (!agreed) engine.end(revokedConsent = true)
     }
 
     /** 내비에 경로를 넣고 엔진을 켠다. 실제 신호 모드에서 내비 입력이 실패하면 시작하지 않는다. */
@@ -123,10 +123,10 @@ class AppSignals(
         scope.launch {
             val caps = realCaps.await()
             support.value = Support(caps?.seatSupported == true, caps?.doorSupported == true, realDriving != null)
-            Log.i(TAG, "실제 신호 지원: ${support.value}")
+            if (BuildConfig.DEBUG) Log.i(TAG, "실제 신호 지원: ${support.value}")
             // 데모 신호는 실제 차량 값에서 시작한다
             val snapshot = caps?.let { c -> runCatching { realVehicle?.readNow(c) }.getOrNull() } ?: return@launch
-            Log.i(TAG, "실제 차량 값: $snapshot, 문 닫힘 값: ${caps.doorClosedValue.values}")
+            if (BuildConfig.DEBUG) Log.i(TAG, "실제 차량 값: $snapshot, 문 닫힘 값: ${caps.doorClosedValue.values}")
             snapshot.occupied?.let(demo.vehicle::setOccupied)
             snapshot.anyDoorOpen?.let(demo.vehicle::setDoorOpen)
         }

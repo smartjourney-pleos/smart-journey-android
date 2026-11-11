@@ -1,5 +1,6 @@
 package com.smartjourney.vehicle.demo
 
+import com.smartjourney.vehicle.BuildConfig
 import com.smartjourney.vehicle.core.FakeVehicleGateway
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
@@ -14,8 +15,8 @@ import kotlinx.coroutines.launch
  */
 class DemoController(private val scope: CoroutineScope) {
 
-    /** true면 데모 신호, false면 실제 차량 신호(Pleos SDK)를 쓴다. */
-    val enabled = MutableStateFlow(true)
+    /** true면 데모 신호, false면 실제 차량 신호(Pleos SDK)를 쓴다. 디버그 빌드 기본값 true. */
+    val enabled = MutableStateFlow(BuildConfig.DEBUG)
 
     val vehicle = FakeVehicleGateway(occupied = 4, buckled = 4)
     val restricted = MutableStateFlow(false)

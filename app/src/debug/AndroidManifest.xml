@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- 데모 리시버 보호용 디버그 전용 권한 -->
+    <permission
+        android:name="com.smartjourney.vehicle.permission.DEMO"
+        android:protectionLevel="signatureOrSystem" />
+    <uses-permission android:name="com.smartjourney.vehicle.permission.DEMO" />
+
     <application>
         <!-- 에뮬레이터 연동 확인용. 디버그 빌드에서만 포함된다. -->
         <activity
@@ -11,6 +17,7 @@
         <!-- adb로 데모 신호를 넣는 리시버. 디버그 빌드에서만 포함된다. -->
         <receiver
             android:name=".debug.DemoReceiver"
+            android:permission="com.smartjourney.vehicle.permission.DEMO"
             android:exported="true" />
     </application>
 </manifest>
