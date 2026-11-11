@@ -5,10 +5,10 @@
 
 ## 기술 스택
 
-Kotlin 2.0, Jetpack Compose, Coroutines/Flow, Pleos Vehicle SDK 2.3.2 (NaviHelper SDK는 연동 예정)
+Kotlin 2.0, Jetpack Compose, Coroutines/Flow, Pleos Vehicle SDK 2.3.2, Pleos NaviHelper SDK 3.0.5
 
 - `minSdk 28`, `targetSdk 34`, `compileSdk 35`, JDK 17 이상 (JDK 21 사용 중)
-- 에뮬레이터/차량의 Vehicle 서비스 **2.3.13 이상** 필요
+- 에뮬레이터/차량의 Vehicle 서비스 **2.3.13 이상**, Navi 서비스 **2.0.1 이상** 필요
 
 ## 현재 구성
 
@@ -17,9 +17,12 @@ Kotlin 2.0, Jetpack Compose, Coroutines/Flow, Pleos Vehicle SDK 2.3.2 (NaviHelpe
 | `app/.../core/PleosVehicleGateway.kt` | Vehicle SDK 래퍼. 좌석 점유·안전벨트·도어 신호를 Flow로 제공 |
 | `app/.../core/FakeVehicleGateway.kt` | 시연·테스트용 가짜 구현 (좌석 수, 도어 상태를 직접 변경) |
 | `app/.../core/VehicleGatewayFactory.kt` | Pleos 서비스에 붙으면 실제 구현, 실패하면 Fake로 대체 |
+| `app/.../core/NaviGateway.kt` | NaviHelper 래퍼 인터페이스. ETA(`trip`)·도착 이벤트(`arrivals`)·경로 요청(`setRoute`, 경유지 ≤ 2) |
+| `app/.../core/PleosNaviGateway.kt` | NaviHelper 3.0.5 구현. `requestRouteWithWaypoints` 후 `onRoutingCompleted`/`onError`까지 대기 |
+| `app/.../core/FakeNaviGateway.kt`, `NaviGatewayFactory.kt` | 시연·테스트용 Fake와 선택 팩토리 (Vehicle과 같은 방식) |
 | `app/.../MainActivity.kt` | 신호 연동 확인용 임시 화면 (이후 정차 화면/승인 카드로 대체) |
 
-선언한 차량 권한: `CAR_SEATS`, `CAR_DOORS`. 내비 연동 등 기능이 늘면 권한을 추가합니다.
+선언한 차량 권한: `CAR_SEATS`, `CAR_DOORS`, `NAVI_ROUTE`, `NAVI_ROUTE_SEARCH`. 내비 화면 요청(`requestNavigationScreen`)을 쓰게 되면 `NAVI_CUSTOM_MAP`을 추가합니다.
 
 ## 빌드와 실행
 
