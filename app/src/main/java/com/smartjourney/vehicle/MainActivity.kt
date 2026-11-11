@@ -1,66 +1,28 @@
 package com.smartjourney.vehicle
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
-import com.smartjourney.vehicle.core.VehicleGateway
-import com.smartjourney.vehicle.core.VehicleGatewayFactory
+import androidx.activity.result.contract.ActivityResultContracts
+import com.smartjourney.vehicle.ui.AppRoot
+import com.smartjourney.vehicle.ui.SmartJourneyTheme
 
+/** 정차 중에 여는 화면: 동의, 인원 확인, 방문지 고르기, 여정 시작, 진행 현황. */
 class MainActivity : ComponentActivity() {
 
-    private lateinit var gateway: VehicleGateway
+    private val askNotifications = registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        gateway = VehicleGatewayFactory.create(this)
-        setContent {
-            MaterialTheme {
-                Surface(modifier = Modifier.fillMaxSize()) {
-                    SignalScreen(gateway)
-                }
-            }
+        // 상태 알림 한 줄과 승인 알림에 필요하다
+        if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
-    }
-
-    override fun onDestroy() {
-        gateway.release()
-        super.onDestroy()
-    }
-}
-
-/** 차량 신호 연동 확인용 임시 화면. 이후 정차 화면/승인 카드로 대체한다. */
-@androidx.compose.runtime.Composable
-private fun SignalScreen(gateway: VehicleGateway) {
-    var occupied by remember { mutableStateOf<Int?>(null) }
-    var doorOpen by remember { mutableStateOf<Boolean?>(null) }
-
-    LaunchedEffect(gateway) {
-        val caps = gateway.capabilities()
-        val snapshot = gateway.readNow(caps)
-        occupied = snapshot.occupied
-        doorOpen = snapshot.anyDoorOpen
-    }
-
-    Column(
-        modifier = Modifier.padding(32.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Text("스마트 저니", style = MaterialTheme.typography.headlineMedium)
-        Text("탑승 인원(좌석 점유): ${occupied ?: "확인 중"}")
-        Text("도어 열림: ${doorOpen ?: "확인 중"}")
+        setContent { SmartJourneyTheme { AppRoot(graph) } }
     }
 }

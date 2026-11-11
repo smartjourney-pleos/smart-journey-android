@@ -34,8 +34,8 @@ interface NaviGateway {
     val trip: Flow<NaviTrip>
     val arrivals: Flow<ArrivalEvent>
 
-    /** [dest]까지의 trip 정보를 요청한다. 결과는 [trip]으로 온다. */
-    suspend fun requestTrip(dest: Place)
+    /** [dest]까지의 trip 정보를 요청하고 그 결과를 돌려준다([trip]으로도 온다). 응답이 없으면 null. */
+    suspend fun requestTrip(dest: Place): NaviTrip?
 
     /** 목적지와 경유지(최대 2개)로 경로를 요청한다. 경로가 잡힐 때(`onRoutingCompleted` 또는 `onRouteStarted`)까지 기다린다. */
     suspend fun setRoute(dest: Place, waypoints: List<Place> = emptyList()): Result<Unit>

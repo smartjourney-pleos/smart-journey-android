@@ -7,5 +7,10 @@
             android:name=".debug.ProbeActivity"
             android:exported="true"
             android:launchMode="singleTop" />
+
+        <!-- adb로 데모 신호를 넣는 리시버. 디버그 빌드에서만 포함된다. -->
+        <receiver
+            android:name=".debug.DemoReceiver"
+            android:exported="true" />
     </application>
 </manifest>

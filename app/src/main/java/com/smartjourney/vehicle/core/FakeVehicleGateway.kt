@@ -6,6 +6,7 @@ import ai.pleos.playground.vehicle.constant.area.DoorValue
 import ai.pleos.playground.vehicle.constant.area.SeatValue
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 
 /**
  * 에뮬레이터 신호가 불안정하거나 Pleos 서비스가 없는 환경(시연·테스트)용 가짜 구현.
@@ -20,6 +21,10 @@ class FakeVehicleGateway(
     private val occupiedState = MutableStateFlow(occupied)
     private val buckledState = MutableStateFlow(buckled)
     private val doorOpenState = MutableStateFlow(doorOpen)
+
+    /** 데모 패널이 현재 값을 보여 줄 때 쓴다. */
+    val occupied: StateFlow<Int> = occupiedState
+    val doorOpen: StateFlow<Boolean> = doorOpenState
 
     fun setOccupied(count: Int) { occupiedState.value = count }
     fun setBuckled(count: Int) { buckledState.value = count }
