@@ -8,9 +8,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -42,6 +44,8 @@ fun DemoPanel(graph: AppGraph, journey: JourneyState, modifier: Modifier = Modif
     val queue by remember(storeId) { graph.backend.queueStatus(storeId) }.collectAsStateWithLifecycle(initialValue = null)
     val waitingId = journey.current?.waiting?.waitingId
 
+    // 색을 지정하지 않은 글자도 주간/야간 모두 읽히도록 기본 글자색을 정한다
+    CompositionLocalProvider(LocalContentColor provides Palette.Ink) {
     Column(
         modifier.background(Palette.DemoBackground).verticalScroll(rememberScrollState()).padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp),
@@ -97,7 +101,7 @@ fun DemoPanel(graph: AppGraph, journey: JourneyState, modifier: Modifier = Modif
         Section("매장 (POS 역할)") {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
-                    "${store?.name ?: "A 맛집"} 현장 ${queue?.aheadTeams ?: 0}팀 · ${queue?.estimatedWaitMin ?: 0}분",
+                    "${store?.name ?: "첫 데모 장소"} 현장 ${queue?.aheadTeams ?: 0}팀 · ${queue?.estimatedWaitMin ?: 0}분",
                     Modifier.weight(1f), fontSize = 22.sp, fontWeight = FontWeight.SemiBold,
                 )
                 SmallButton("−1", { graph.backend.addWalkIn(storeId, -1) })
@@ -113,6 +117,7 @@ fun DemoPanel(graph: AppGraph, journey: JourneyState, modifier: Modifier = Modif
             if (received.isEmpty()) Text("아직 보낸 정보가 없어요", fontSize = 18.sp, color = Palette.Muted)
             received.takeLast(6).forEach { Text(it, fontSize = 18.sp, color = Palette.Ink) }
         }
+    }
     }
 }
 

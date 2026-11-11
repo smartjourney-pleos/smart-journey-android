@@ -163,7 +163,15 @@ class JourneyEngine(
             combine(signals.remainingSec(stop.store), backend.queueStatus(stop.store.id)) { sec, queue -> sec to queue }
                 .collect { (sec, queue) -> onInputs(sec, queue) }
         }
-        launchInStop { signals.arrivals.collect { onArrived() } }
+        launchInStop { signals.arrivals.collect { if (isCurrentStop(it)) onArrived() else log("다른 매장 도착 신호 무시 · $it") } }
+        launchInStop {
+            signals.routeChanged.collect {
+                if (!arrived) {
+                    log("내비 경로가 바뀌거나 취소됨")
+                    notice("내비 경로가 바뀌었어요. 웨이팅 시간 계산이 맞지 않을 수 있어요")
+                }
+            }
+        }
         launchInStop {
             combine(signals.restricted, signals.anyDoorOpen, signals.occupied) { r, d, o -> Triple(r, d, o) }
                 .collect { latest ->
@@ -303,6 +311,15 @@ class JourneyEngine(
     }
 
     // ---------- 도착·하차 확인 (명세서 5.3) ----------
+
+    private fun isCurrentStop(arrival: Arrival): Boolean {
+        val s = _state.value
+        return when (arrival) {
+            Arrival.Current -> true
+            is Arrival.Waypoint -> arrival.order - 1 == s.index
+            Arrival.Destination -> s.index == s.stops.lastIndex
+        }
+    }
 
     private fun onArrived() {
         if (arrived) return

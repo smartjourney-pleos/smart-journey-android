@@ -3,9 +3,9 @@ package com.smartjourney.vehicle
 import android.app.Application
 import android.content.Context
 import android.util.Log
+import com.smartjourney.vehicle.core.ArrivalEvent
 import com.smartjourney.vehicle.core.CarUxDrivingStateGateway
 import com.smartjourney.vehicle.core.DrivingStateGateway
-import com.smartjourney.vehicle.core.NaviException
 import com.smartjourney.vehicle.core.NaviGateway
 import com.smartjourney.vehicle.core.NaviGatewayFactory
 import com.smartjourney.vehicle.core.Place
@@ -13,9 +13,11 @@ import com.smartjourney.vehicle.core.PleosVehicleGateway
 import com.smartjourney.vehicle.core.VehicleCaps
 import com.smartjourney.vehicle.core.VehicleGateway
 import com.smartjourney.vehicle.core.VehicleSnapshot
+import com.smartjourney.vehicle.core.setRouteAndShowNavigation
 import com.smartjourney.vehicle.data.FakeBackend
 import com.smartjourney.vehicle.demo.DemoController
 import com.smartjourney.vehicle.domain.Store
+import com.smartjourney.vehicle.engine.Arrival
 import com.smartjourney.vehicle.engine.JourneyEngine
 import com.smartjourney.vehicle.engine.JourneySignals
 import com.smartjourney.vehicle.service.JourneyService
@@ -42,6 +44,11 @@ import kotlinx.coroutines.withTimeoutOrNull
 private const val TAG = "SJ"
 private const val DEFAULT_LEG_SEC = 25 * 60
 private const val REAL_TRIP_PERIOD_MS = 30_000L
+private const val CAPS_ATTEMPTS = 3
+const val CONSENT_VERSION = "2026-11-11"
+
+/** 보유 기간. 서버의 파기 작업(DataRetentionJob, 30일)과 맞춘다. */
+const val RETENTION_DAYS = 30
 
 class SmartJourneyApp : Application() {
     lateinit var graph: AppGraph
@@ -65,11 +72,14 @@ class AppGraph(private val context: Context) {
 
     private val prefs = context.getSharedPreferences("smart_journey", Context.MODE_PRIVATE)
 
-    /** 데이터 전송 동의 (정책 4). 동의 전에는 여정을 시작할 수 없다. */
-    val consented = MutableStateFlow(prefs.getBoolean("consented", false))
+    /**
+     * 데이터 전송 동의 (정책 4). 동의 전에는 여정을 시작할 수 없다.
+     * 고지 내용이 바뀌면 [CONSENT_VERSION]을 올려 다시 동의받는다. 실서버 연동 뒤에는 GET /consent/notice의 version을 쓴다.
+     */
+    val consented = MutableStateFlow(prefs.getString("consent_version", null) == CONSENT_VERSION)
 
     fun setConsent(agreed: Boolean) {
-        prefs.edit().putBoolean("consented", agreed).apply()
+        prefs.edit().putString("consent_version", if (agreed) CONSENT_VERSION else null).apply()
         consented.value = agreed
         if (!agreed) engine.end(revokedConsent = true)
     }
@@ -107,9 +117,17 @@ class AppSignals(
     private val realDriving: DrivingStateGateway? = runCatching { CarUxDrivingStateGateway(context.applicationContext) }
         .onFailure { Log.w(TAG, "CarUxRestrictions 연결 실패", it) }.getOrNull()
 
+    // Vehicle.initialize()에는 연결 완료 콜백이 없어 첫 조회가 서비스 연결 전에 실패할 수 있다.
+    // Error code 가이드(ERROR_SERVICE_CONNECTION_FAILURE·ERROR_INTERNAL_SERVICE → 재시도)에 따라 몇 번 다시 묻는다.
     private val realCaps = scope.async {
         val vehicle = realVehicle ?: return@async null
-        withTimeoutOrNull(3_000) { runCatching { vehicle.capabilities() }.getOrNull() }
+        var caps: VehicleCaps? = null
+        for (attempt in 1..CAPS_ATTEMPTS) {
+            caps = withTimeoutOrNull(3_000) { runCatching { vehicle.capabilities() }.getOrNull() }
+            if (caps != null && (caps.seatSupported || caps.doorSupported)) break
+            if (attempt < CAPS_ATTEMPTS) delay(2_000L * attempt)
+        }
+        caps
     }
 
     /** 실제 차량 신호를 쓸 수 있는지. null이면 확인 중 (디자인 가이드 V-00). */
@@ -152,7 +170,17 @@ class AppSignals(
     override val restricted: Flow<Boolean> =
         demo.enabled.flatMapLatest { useDemo -> if (useDemo) demo.restricted else realRestricted ?: flowOf(true) }
 
-    override val arrivals: Flow<Unit> = merge(demo.arrivals, navi.arrivals.map { })
+    override val arrivals: Flow<Arrival> = merge(
+        demo.arrivals.map { Arrival.Current },
+        navi.arrivals.map {
+            when (it) {
+                is ArrivalEvent.Waypoint -> Arrival.Waypoint(it.order)
+                is ArrivalEvent.Destination -> Arrival.Destination
+            }
+        },
+    )
+
+    override val routeChanged: Flow<Unit> = navi.routeChanged
 
     override fun remainingSec(target: Store): Flow<Int> = demo.enabled.flatMapLatest { useDemo ->
         flow {
@@ -185,9 +213,10 @@ class AppSignals(
     /** 마지막 매장이 목적지, 그 앞 매장들이 경유지(최대 2개)다. */
     suspend fun setRoute(stops: List<Store>): Result<Unit> {
         val places = stops.map { it.toPlace() }
-        return withTimeoutOrNull(20_000) { navi.setRoute(places.last(), places.dropLast(1)) }
-            ?: Result.failure(NaviException("내비 응답 없음"))
+        return navi.setRouteAndShowNavigation(places.last(), places.dropLast(1)) { error ->
+            Log.w(TAG, "경로는 설정됐지만 내비 화면 전환 요청에 실패했어요", error)
+        }
     }
 
-    private fun Store.toPlace() = Place(latitude, longitude, name, poiId, poiSubId)
+    private fun Store.toPlace() = Place(latitude, longitude, name, poiId, poiSubId, address)
 }

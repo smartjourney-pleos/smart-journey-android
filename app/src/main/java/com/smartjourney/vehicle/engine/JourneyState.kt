@@ -13,12 +13,25 @@ interface JourneySignals {
     val occupied: Flow<Int>
     val anyDoorOpen: Flow<Boolean>
     val restricted: Flow<Boolean>
-    val arrivals: Flow<Unit>
+    /** 도착한 매장. 내비는 경유지 도착을 "보낼 수 있다"고만 보장하므로 현재 매장과 맞는지 엔진이 확인한다. */
+    val arrivals: Flow<Arrival>
+
+    /** 운전자가 내비에서 경로를 취소했거나 목적지를 바꿨다. */
+    val routeChanged: Flow<Unit>
 
     /** [target]까지 남은 시간(초). 구독하는 동안 추적한다. */
     fun remainingSec(target: Store): Flow<Int>
     suspend fun sensorsSupported(): Boolean
     suspend fun readNow(): VehicleSnapshot
+}
+
+sealed interface Arrival {
+    /** 지금 향하는 매장 (데모 조작) */
+    data object Current : Arrival
+    /** 경유지 [order]번(1·2) = 코스의 order-1번째 매장 */
+    data class Waypoint(val order: Int) : Arrival
+    /** 최종 목적지 = 코스의 마지막 매장 */
+    data object Destination : Arrival
 }
 
 /** 명세서 5.1의 웨이팅 상태. PLANNED·PROMPTED는 차량 앱 안에만 있다. */

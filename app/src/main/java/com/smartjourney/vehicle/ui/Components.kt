@@ -2,9 +2,26 @@ package com.smartjourney.vehicle.ui
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.*
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -62,8 +79,10 @@ fun SmallButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier
         ),
         contentPadding = PaddingValues(horizontal = 24.dp, vertical = 8.dp),
     ) {
-        Text(text, fontFamily = Type.Body.fontFamily, fontSize = 26.sp, lineHeight = 34.sp,
-            fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(
+            text, fontFamily = Type.Body.fontFamily, fontSize = 26.sp, lineHeight = 34.sp,
+            fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -86,8 +105,10 @@ fun PartyStepper(party: Int?, onChange: (Int) -> Unit, modifier: Modifier = Modi
         modifier.widthIn(max = 420.dp).fillMaxWidth(), shape = RoundedCornerShape(24.dp),
         color = Palette.Elevated, border = BorderStroke(2.dp, Palette.Line), shadowElevation = 6.dp,
     ) {
-        Row(Modifier.heightIn(min = 100.dp).padding(horizontal = 24.dp, vertical = 18.dp),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+        Row(
+            Modifier.heightIn(min = 100.dp).padding(horizontal = 24.dp, vertical = 18.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(24.dp),
+        ) {
             IconButton({ onChange(((party ?: 2) - 1).coerceAtLeast(1)) }, Modifier.size(64.dp), enabled = party == null || party > 1) {
                 Icon(painterResource(R.drawable.pleos_minus), "탑승 인원 줄이기", Modifier.size(44.dp))
             }

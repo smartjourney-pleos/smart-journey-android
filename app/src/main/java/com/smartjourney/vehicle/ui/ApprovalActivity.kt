@@ -14,8 +14,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -26,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -50,7 +51,9 @@ class ApprovalActivity : ComponentActivity() {
                 val prompt = state.prompt
                 // 답했거나 시간이 지나 질문이 사라지면 닫는다
                 LaunchedEffect(prompt == null) { if (prompt == null) finish() }
-                if (prompt != null) ApprovalCard(prompt, onPrimary = { engine.approve() }, onSecondary = { engine.defer() })
+                if (prompt != null) {
+                    ApprovalCard(prompt, state.restricted, onPrimary = { engine.approve() }, onSecondary = { engine.defer() })
+                }
             }
         }
     }
@@ -76,7 +79,7 @@ class ApprovalActivity : ComponentActivity() {
 }
 
 @Composable
-private fun ApprovalCard(prompt: Prompt, onPrimary: () -> Unit, onSecondary: () -> Unit) {
+private fun ApprovalCard(prompt: Prompt, restricted: Boolean, onPrimary: () -> Unit, onSecondary: () -> Unit) {
     val text = prompt.text()
     val now by produceState(System.currentTimeMillis()) {
         while (true) {
@@ -87,12 +90,27 @@ private fun ApprovalCard(prompt: Prompt, onPrimary: () -> Unit, onSecondary: () 
     // Pleos System Popup (67:29503): centered title, description and equal actions.
     Box(Modifier.fillMaxSize().background(Palette.Background).padding(40.dp), contentAlignment = Alignment.Center) {
         Surface(Modifier.widthIn(max = 1000.dp).fillMaxWidth(), shape = RoundedCornerShape(40.dp), color = Palette.Elevated) {
-            Column(Modifier.verticalScroll(rememberScrollState()).padding(40.dp),
+            Column(
+                Modifier.verticalScroll(rememberScrollState()).padding(40.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(24.dp)) {
-                Text("스마트 저니", style = Type.Label)
-                Text(text.title, style = Type.Title.copy(fontSize = 40.sp, lineHeight = 52.sp, fontWeight = FontWeight.ExtraBold), textAlign = TextAlign.Center)
-                Text(text.detail, style = Type.Body, color = Palette.Gray, textAlign = TextAlign.Center)
+                verticalArrangement = Arrangement.spacedBy(24.dp),
+            ) {
+                if (!restricted) Text("스마트 저니", style = Type.Label)
+                Text(
+                    text.title,
+                    style = Type.Title.copy(fontSize = 40.sp, lineHeight = 52.sp, fontWeight = FontWeight.ExtraBold),
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text.detail,
+                    style = Type.Body,
+                    color = Palette.Gray,
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
                 BoxWithConstraints(Modifier.fillMaxWidth()) {
                     if (maxWidth >= 720.dp) {
                         Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
@@ -106,9 +124,14 @@ private fun ApprovalCard(prompt: Prompt, onPrimary: () -> Unit, onSecondary: () 
                         }
                     }
                 }
-                prompt.expiresAt?.let { expiresAt ->
-                    val seconds = ((expiresAt - now) / 1_000).coerceAtLeast(0)
-                    Text("${seconds}초 뒤 자동으로 닫혀요", style = Type.Caption)
+                if (prompt.expiresAt != null) {
+                    if (restricted) {
+                        // 주행 중 시선 분산 방지 (CarUxRestrictions): 매초 변하는 카운트다운 대신 정적 문구 유지
+                        Text("답하지 않으면 1분 뒤 자동으로 닫혀요", style = Type.Caption)
+                    } else {
+                        val seconds = ((prompt.expiresAt - now) / 1_000).coerceAtLeast(0)
+                        Text("${seconds}초 뒤 자동으로 닫혀요", style = Type.Caption)
+                    }
                 }
             }
         }

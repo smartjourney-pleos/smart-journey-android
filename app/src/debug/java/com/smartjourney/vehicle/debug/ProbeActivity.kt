@@ -16,7 +16,7 @@ import kotlinx.coroutines.launch
  * 에뮬레이터에서 Vehicle·Navi 신호를 로그(태그 PROBE)로 확인하는 디버그 전용 Activity.
  *
  *   adb shell am start -n com.smartjourney.vehicle/.debug.ProbeActivity
- *   adb shell am start -n com.smartjourney.vehicle/.debug.ProbeActivity --es cmd trip|route [--ed lat 37.5 --ed lng 127.0 --ed wlat .. --ed wlng ..]
+ *   adb shell am start -n com.smartjourney.vehicle/.debug.ProbeActivity --es cmd trip|route|map [--ed lat 37.5 --ed lng 127.0 --ed wlat .. --ed wlng ..]
  */
 class ProbeActivity : ComponentActivity() {
 
@@ -60,6 +60,7 @@ class ProbeActivity : ComponentActivity() {
             when (cmd) {
                 "trip" -> runCatching { navi.requestTrip(dest) }.onFailure { log("trip 요청 실패: $it") }
                 "route" -> log("route 결과=${navi.setRoute(dest, waypoints)}")
+                "map" -> log("내비 화면 전경 요청=${navi.showNavigation()}")
             }
         }
     }

@@ -2,25 +2,54 @@ package com.smartjourney.vehicle.ui
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.selection.toggleable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.VerticalDivider
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.smartjourney.vehicle.R
-import com.smartjourney.vehicle.BuildConfig
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.smartjourney.vehicle.AppGraph
+import com.smartjourney.vehicle.BuildConfig
+import com.smartjourney.vehicle.R
+import com.smartjourney.vehicle.RETENTION_DAYS
+import com.smartjourney.vehicle.core.readServiceVersions
 import com.smartjourney.vehicle.domain.AlightDetector
 import com.smartjourney.vehicle.domain.ArrivalResult
 import com.smartjourney.vehicle.domain.QueueStatus
@@ -99,6 +128,7 @@ private fun TopBar(restricted: Boolean, showDemo: Boolean, onToggleDemo: () -> U
                     Text("스마트 저니", style = Type.Title, maxLines = 1)
                     Text(if (restricted) "주행 중 · 안전하게 이동하세요" else "정차 중 · 다음 여정을 준비하세요", style = Type.Caption)
                 }
+                if (restricted) Badge("주행 규제 적용 중", Palette.Orange)
                 if (BuildConfig.DEBUG) {
                     SmallButton(if (showDemo) "데모 닫기" else "데모", onToggleDemo)
                 }
@@ -127,7 +157,7 @@ private fun ConsentScreen(onAgree: () -> Unit) {
         }
         HorizontalDivider(color = Palette.Line)
         Text("위치 좌표와 이동 경로는 보내지 않아요", style = Type.Body)
-        Text("받는 곳: 스마트 저니 서버 · 웨이팅한 매장", style = Type.Label)
+        Text("받는 곳: 스마트 저니 서버 · 웨이팅한 매장 · 보관: ${RETENTION_DAYS}일 뒤 삭제", style = Type.Label)
     }
     BigButton("동의하고 시작", onAgree, Modifier.fillMaxWidth())
     BigButton("나중에", { later = true }, Modifier.fillMaxWidth(), primary = false)
@@ -207,6 +237,21 @@ private fun SetupScreen(graph: AppGraph, modifier: Modifier = Modifier) {
                 }
             }
 
+            val context = LocalContext.current
+            val versions = remember(context) { readServiceVersions(context) }
+            Panel {
+                Text("연결 환경", style = Type.Title)
+                versions.forEach { version ->
+                    Text("${version.label} SDK ${version.sdk} · 서비스 ${version.installed ?: "설치되지 않음"}", style = Type.Label)
+                    if (!version.ok) {
+                        Text(
+                            "${version.label} 서비스 ${version.required} 이상이 필요해요. 설치 또는 업데이트 후 실제 연결을 확인해 주세요.",
+                            style = Type.Caption, color = Palette.Red,
+                        )
+                    }
+                }
+                Text("데모 장소의 웨이팅 정보는 시연용이에요", style = Type.Caption)
+            }
         }
         Surface(color = Palette.Surface) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 40.dp, vertical = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {

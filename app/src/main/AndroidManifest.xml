@@ -8,6 +8,8 @@
     <!-- NaviHelper: 정보 조회(NAVI_ROUTE), 경로 요청·변경(NAVI_ROUTE_SEARCH) -->
     <uses-permission android:name="pleos.car.permission.NAVI_ROUTE" />
     <uses-permission android:name="pleos.car.permission.NAVI_ROUTE_SEARCH" />
+    <!-- 경로 설정 후 내장 내비 화면을 전경으로 요청한다 (NaviHelper.requestNavigationScreen, normal). -->
+    <uses-permission android:name="pleos.car.permission.NAVI_CUSTOM_MAP" />
 
     <uses-permission android:name="android.permission.INTERNET" />
 
@@ -15,16 +17,19 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
-    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
-    <!-- "다른 앱 위에 표시"를 허용받으면 승인 카드를 내비 위에 바로 띄울 수 있다. 없으면 헤드업 알림으로 대신한다. -->
-    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
+    <!-- 시작 화면에서 설치된 SDK 서비스 버전을 확인한다 (Android 11+ package visibility). -->
+    <queries>
+        <package android:name="ai.pleos.playground.service.vehicle" />
+        <package android:name="ai.pleos.playground.service.navi" />
+    </queries>
 
     <application
         android:name=".SmartJourneyApp"
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:label="스마트 저니"
-        android:theme="@android:style/Theme.DeviceDefault.Light.NoActionBar">
+        android:theme="@style/Theme.SmartJourney">
 
         <activity
             android:name=".MainActivity"
