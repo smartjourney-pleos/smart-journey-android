@@ -1,23 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- 데모 리시버 보호용 디버그 전용 권한 -->
-    <permission
-        android:name="com.smartjourney.vehicle.permission.DEMO"
-        android:protectionLevel="signatureOrSystem" />
-    <uses-permission android:name="com.smartjourney.vehicle.permission.DEMO" />
+    <!-- 시연용: adb appops로 허용하면 백그라운드에서도 승인 카드 화면을 바로 띄울 수 있다. 심사 빌드에는 넣지 않는다. -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
+    <!--
+        아래 두 컴포넌트는 adb(shell)에서 부르는 시연·검증 도구라 권한을 걸지 않는다.
+        signature 권한을 걸면 shell 사용자가 가질 수 없어 adb 호출이 조용히 막힌다(11/11 에뮬레이터 확인).
+        debug 소스셋에만 있어 심사·배포(release) 빌드에는 들어가지 않는다.
+    -->
     <application>
-        <!-- 에뮬레이터 연동 확인용. 디버그 빌드에서만 포함된다. -->
         <activity
             android:name=".debug.ProbeActivity"
             android:exported="true"
             android:launchMode="singleTop" />
 
-        <!-- adb로 데모 신호를 넣는 리시버. 디버그 빌드에서만 포함된다. -->
         <receiver
             android:name=".debug.DemoReceiver"
-            android:permission="com.smartjourney.vehicle.permission.DEMO"
             android:exported="true" />
     </application>
 </manifest>

@@ -46,8 +46,9 @@ scripts/demo-flow.sh           # 두 매장 여정을 처음부터 끝까지 자
 adb logcat -s SJ SJ-DEMO       # 엔진 로그
 ```
 
-승인 카드는 기본으로 **내비 위 헤드업 알림**(제목·내용·버튼 2개)으로 뜹니다. 앱 화면이 보이는 중이면 카드 화면이 바로 뜹니다.
-백그라운드에서도 카드 화면을 바로 띄우려면 "다른 앱 위에 표시"를 허용해야 합니다(시연용):
+**주행 중**에는 승인 요청이 내비 위 헤드업 알림(제목·내용·버튼 2개)으로만 뜹니다. 카드 화면은 앱 영역 전체를 차지해 지도를 가릴 수 있어(Pleos Window Policy) 운전자가 배너를 눌렀을 때만 열립니다.
+**정차 중**에는 카드 화면을 바로 띄워 보고, 시스템이 막으면 헤드업 알림으로 대신합니다.
+디버그 빌드에서는 "다른 앱 위에 표시"를 허용하면 정차 중 백그라운드에서도 카드가 바로 뜹니다(시연용, 심사 빌드에는 이 권한이 없습니다):
 
 ```bash
 adb shell appops set --user 10 com.smartjourney.vehicle SYSTEM_ALERT_WINDOW allow
@@ -67,7 +68,12 @@ adb shell appops set --user 10 com.smartjourney.vehicle SYSTEM_ALERT_WINDOW allo
 | `AppGraph.kt` | 객체 묶음, 실제 신호와 데모 신호 선택(`AppSignals`) |
 | `app/src/debug/` | `ProbeActivity`(SDK 신호 로그), `DemoReceiver`(터미널 조작). 디버그 빌드에만 들어감 |
 
-선언한 권한: `CAR_SEATS`, `CAR_DOORS`, `NAVI_ROUTE`, `NAVI_ROUTE_SEARCH`, `POST_NOTIFICATIONS`, `FOREGROUND_SERVICE`(+`SPECIAL_USE`), `USE_FULL_SCREEN_INTENT`, `SYSTEM_ALERT_WINDOW`(선택).
+선언한 권한: `CAR_SEATS`, `CAR_DOORS`, `NAVI_ROUTE`, `NAVI_ROUTE_SEARCH`, `POST_NOTIFICATIONS`, `FOREGROUND_SERVICE`(+`SPECIAL_USE`). 디버그 빌드에만 `SYSTEM_ALERT_WINDOW`(시연용).
+
+데모 패널, 1초 데모 타이머, adb 조작(`DemoReceiver`, `ProbeActivity`)은 디버그 빌드에서만 동작합니다. `FakeBackend`(앱 안 가짜 서버)는 아직 릴리스에도 들어가므로, **실서버 연동 전에는 심사용 빌드를 만들지 않습니다**.
+
+주간/야간: 차량 야간 모드를 따릅니다. 에뮬레이터에서는 `adb shell cmd car_service day-night-mode night`(되돌리기 `sensor`)로 확인합니다.
+주행 규제: 데모 신호 대신 실제 CarUxRestrictions 경로를 확인하려면 데모 패널에서 실제 신호로 바꾸고 `adb shell cmd hmg_car_service --service drivingstate driving_regulation on` (Pleos FAQ - 디버깅 ADB)을 씁니다. 이 명령은 에뮬레이터에서 아직 실행해 보지 않았습니다.
 
 **에뮬레이터에서 확인한 것 (11/11)**
 - 백그라운드에서 서비스가 화면을 직접 띄우면 시스템이 막습니다(`BAL_BLOCK`). "다른 앱 위에 표시"가 허용돼 있으면 뜹니다.
@@ -83,6 +89,9 @@ Android Studio에서 이 폴더를 열면 됩니다. 터미널에서는 다음�
 ./gradlew :app:assembleDebug        # app/build/outputs/apk/debug/
 ./gradlew :app:testDebugUnitTest    # 단위 테스트 (골든타임, 하차 확인, 엔진 흐름)
 ```
+
+**배포 빌드 서명**: 키 정보는 환경변수나 `local.properties`의 `SJ_RELEASE_STORE_FILE`, `SJ_RELEASE_STORE_PASSWORD`, `SJ_RELEASE_KEY_ALIAS`, `SJ_RELEASE_KEY_PASSWORD`에만 둡니다. 없으면 서명되지 않은 APK가 나옵니다.
+**버전**: 심사 요청·배포 때마다 `versionCode`를 올립니다(Pleos 앱 버전 관리 정책).
 
 `local.properties`(Android SDK 경로)는 커밋하지 않으므로 처음 한 번 `sdk.dir=<SDK 경로>`를 직접 만들거나 Android Studio가 만들게 하세요.
 Pleos Connect Emulator 설정은 Pleos 공식 문서(Getting Started)를 따릅니다. 에뮬레이터에서 로컬 서버 주소는 `http://10.0.2.2:8080`입니다.

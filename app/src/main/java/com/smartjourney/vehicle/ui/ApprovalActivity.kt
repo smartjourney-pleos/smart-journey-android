@@ -5,7 +5,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -19,16 +19,15 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.smartjourney.vehicle.engine.Prompt
 import com.smartjourney.vehicle.engine.text
 import com.smartjourney.vehicle.graph
 import com.smartjourney.vehicle.service.Notices
-import kotlinx.coroutines.delay
 
 /**
  * 승인 카드 한 장 (V-07 · V-11 · V-12). 엔진이 띄우고, 답하면 바로 닫혀 아래 화면(내비)만 남는다.
@@ -45,7 +44,9 @@ class ApprovalActivity : ComponentActivity() {
                 val prompt = state.prompt
                 // 답했거나 시간이 지나 질문이 사라지면 닫는다
                 LaunchedEffect(prompt == null) { if (prompt == null) finish() }
-                if (prompt != null) ApprovalCard(prompt, onPrimary = { engine.approve() }, onSecondary = { engine.defer() })
+                if (prompt != null) {
+                    ApprovalCard(prompt, state.restricted, onPrimary = { engine.approve() }, onSecondary = { engine.defer() })
+                }
             }
         }
     }
@@ -71,29 +72,28 @@ class ApprovalActivity : ComponentActivity() {
 }
 
 @Composable
-private fun ApprovalCard(prompt: Prompt, onPrimary: () -> Unit, onSecondary: () -> Unit) {
+private fun ApprovalCard(prompt: Prompt, restricted: Boolean, onPrimary: () -> Unit, onSecondary: () -> Unit) {
     val text = prompt.text()
-    val now by produceState(System.currentTimeMillis()) {
-        while (true) {
-            delay(1_000)
-            value = System.currentTimeMillis()
-        }
-    }
     // Pleos 앱 영역에서는 아래 화면이 비쳐 보이지 않아, 앱 영역 전체를 카드 한 장으로 쓴다 (C-04 ⓐ)
-    Box(Modifier.fillMaxSize().background(Palette.Background).padding(48.dp), contentAlignment = Alignment.Center) {
-        Surface(Modifier.widthIn(max = 1100.dp).fillMaxWidth(), shape = RoundedCornerShape(32.dp), color = Palette.Surface) {
-            Column(Modifier.padding(56.dp), verticalArrangement = Arrangement.spacedBy(28.dp)) {
-                Text("스마트 저니", style = Type.Label)
-                Text(text.title, style = Type.Display)
-                Text(text.detail, style = Type.Headline, color = Palette.Gray)
+    BoxWithConstraints(Modifier.fillMaxSize().background(Palette.Background), contentAlignment = Alignment.Center) {
+        // 세로 창(창 1개)처럼 좁을 때는 여백을 줄인다
+        val narrow = maxWidth < 900.dp
+        Surface(
+            Modifier.padding(if (narrow) 16.dp else 48.dp).widthIn(max = 1100.dp).fillMaxWidth(),
+            shape = RoundedCornerShape(32.dp),
+            color = Palette.Surface,
+        ) {
+            Column(Modifier.padding(if (narrow) 32.dp else 56.dp), verticalArrangement = Arrangement.spacedBy(28.dp)) {
+                // 주행 중에는 질문·핵심 숫자·버튼만 남긴다 (텍스트 3줄 이내, 시선을 끄는 변화 없음)
+                if (!restricted) Text("스마트 저니", style = Type.Label)
+                Text(text.title, style = Type.Display, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(text.detail, style = Type.Headline, color = Palette.Gray, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
                     BigButton(text.primary, onPrimary, Modifier.weight(2f).heightIn(min = 120.dp))
                     text.secondary?.let { BigButton(it, onSecondary, Modifier.weight(1f).heightIn(min = 120.dp), primary = false) }
                 }
-                prompt.expiresAt?.let { expiresAt ->
-                    val seconds = ((expiresAt - now) / 1_000).coerceAtLeast(0)
-                    Text("${seconds}초 뒤 자동으로 닫혀요", style = Type.Label)
-                }
+                // 매초 바뀌는 카운트다운은 시선을 끌어서 고정 문구로 둔다
+                if (!restricted && prompt.expiresAt != null) Text("답하지 않으면 1분 뒤 자동으로 닫혀요", style = Type.Label)
             }
         }
     }

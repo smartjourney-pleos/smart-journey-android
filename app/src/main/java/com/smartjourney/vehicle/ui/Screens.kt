@@ -34,6 +34,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.smartjourney.vehicle.AppGraph
+import com.smartjourney.vehicle.BuildConfig
+import com.smartjourney.vehicle.RETENTION_DAYS
 import com.smartjourney.vehicle.domain.AlightDetector
 import com.smartjourney.vehicle.domain.ArrivalResult
 import com.smartjourney.vehicle.domain.QueueStatus
@@ -51,7 +53,8 @@ fun AppRoot(graph: AppGraph) {
     val consented by graph.consented.collectAsStateWithLifecycle()
     val journey by graph.engine.state.collectAsStateWithLifecycle()
     val restricted by graph.signals.restricted.collectAsStateWithLifecycle(initialValue = false)
-    var showDemo by rememberSaveable { mutableStateOf(true) }
+    // 데모 패널은 디버그 빌드에서만 보인다. 배포 앱에 개발/테스트용 설정을 남기지 않는다 (Pleos 앱 보안 가이드).
+    var showDemo by rememberSaveable { mutableStateOf(BuildConfig.DEBUG) }
 
     BoxWithConstraints(Modifier.fillMaxSize().background(Palette.Background)) {
         val wide = maxWidth >= 1000.dp
@@ -60,7 +63,7 @@ fun AppRoot(graph: AppGraph) {
                 modifier.verticalScroll(rememberScrollState()).padding(32.dp),
                 verticalArrangement = Arrangement.spacedBy(24.dp),
             ) {
-                TopBar(restricted, showDemo, onToggleDemo = { showDemo = !showDemo })
+                TopBar(restricted, showDemo, onToggleDemo = { showDemo = !showDemo }.takeIf { BuildConfig.DEBUG })
                 when {
                     !consented -> ConsentScreen(onAgree = { graph.setConsent(true) })
                     journey.active && restricted -> DrivingScreen(journey)
@@ -86,12 +89,12 @@ fun AppRoot(graph: AppGraph) {
 }
 
 @Composable
-private fun TopBar(restricted: Boolean, showDemo: Boolean, onToggleDemo: () -> Unit) {
+private fun TopBar(restricted: Boolean, showDemo: Boolean, onToggleDemo: (() -> Unit)?) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
         Text("스마트 저니", style = Type.Title)
         Badge(if (restricted) "주행 중" else "정차 중", if (restricted) Palette.Orange else Palette.Green)
         Spacer(Modifier.weight(1f))
-        TextButton(onToggleDemo) { Text(if (showDemo) "데모 패널 숨기기" else "데모 패널", fontSize = 20.sp) }
+        onToggleDemo?.let { TextButton(it) { Text(if (showDemo) "데모 패널 숨기기" else "데모 패널", fontSize = 20.sp) } }
     }
 }
 
@@ -106,13 +109,15 @@ private fun ConsentScreen(onAgree: () -> Unit) {
             Text("•  $it", style = Type.Body)
         }
         Text("위치 좌표와 이동 경로는 보내지 않아요", style = Type.Title, color = Palette.Primary)
-        Text("받는 곳: 스마트 저니 서버, 웨이팅한 매장", style = Type.Label)
+        Text("왜 필요한가요: 매장이 도착 시각과 인원에 맞춰 순서를 준비하고, 도착한 인원을 확인하기 위해서예요", style = Type.Body)
+        Text("받는 곳: 스마트 저니 서버, 웨이팅한 매장 · 보관: ${RETENTION_DAYS}일 뒤 삭제", style = Type.Label)
         Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
             BigButton("동의하고 시작", onAgree, Modifier.weight(2f))
             BigButton("나중에", { later = true }, Modifier.weight(1f), primary = false)
         }
         Text(
-            if (later) "동의하기 전에는 웨이팅을 걸 수 없어요" else "설정에서 언제든 철회할 수 있어요",
+            if (later) "동의하지 않아도 돼요. 다만 동의하기 전에는 웨이팅을 걸 수 없어요"
+            else "동의하지 않을 권리가 있고, 시작 화면 아래에서 언제든 철회할 수 있어요",
             style = Type.Label,
         )
     }

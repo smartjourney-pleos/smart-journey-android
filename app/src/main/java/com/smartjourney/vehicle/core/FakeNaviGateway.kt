@@ -2,6 +2,7 @@ package com.smartjourney.vehicle.core
 
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.emptyFlow
 
 /** 에뮬레이터 내비가 불안정하거나 Pleos 서비스가 없는 환경(시연·테스트)용 가짜 구현. */
 class FakeNaviGateway : NaviGateway {
@@ -11,6 +12,7 @@ class FakeNaviGateway : NaviGateway {
 
     override val trip: Flow<NaviTrip> = tripFlow
     override val arrivals: Flow<ArrivalEvent> = arrivalFlow
+    override val routeChanged: Flow<Unit> = emptyFlow()
 
     /** 마지막으로 요청받은 경로. 테스트에서 확인용. */
     var lastRoute: Pair<Place, List<Place>>? = null

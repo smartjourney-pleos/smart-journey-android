@@ -6,6 +6,7 @@ package com.smartjourney.vehicle.core
 // - 시그니처는 Downloads/Vehicle-2/classes.jar(2.3.2)를 javap로 확인한 기준이다.
 
 import android.content.Context
+import android.util.Log
 import ai.pleos.playground.vehicle.Vehicle
 import ai.pleos.playground.vehicle.api.model.area.DoorArea
 import ai.pleos.playground.vehicle.api.model.area.SeatArea
@@ -42,6 +43,8 @@ interface VehicleGateway {
     fun release()
 }
 
+private const val TAG = "PleosVehicle"
+
 class PleosVehicleGateway(context: Context) : VehicleGateway {
 
     private val vehicle = Vehicle(context).apply { initialize() }
@@ -62,7 +65,7 @@ class PleosVehicleGateway(context: Context) : VehicleGateway {
             suspendCancellableCoroutine<List<SeatArea>> { c ->
                 seat.checkSeatOccupancyCapabilities(
                     { config, areas -> c.resume(if (config.accessType.canRead()) areas else emptyList()) },
-                    { _ -> c.resume(emptyList()) }
+                    { e -> logFailure("좌석 점유 지원 조회", e); c.resume(emptyList()) }
                 )
             }
         }.getOrDefault(emptyList())
@@ -71,7 +74,7 @@ class PleosVehicleGateway(context: Context) : VehicleGateway {
             suspendCancellableCoroutine<List<SeatArea>> { c ->
                 seat.checkSeatBeltBuckledCapabilities(
                     { config, areas -> c.resume(if (config.accessType.canRead()) areas else emptyList()) },
-                    { _ -> c.resume(emptyList()) }
+                    { e -> logFailure("벨트 지원 조회", e); c.resume(emptyList()) }
                 )
             }
         }.getOrDefault(emptyList())
@@ -86,7 +89,7 @@ class PleosVehicleGateway(context: Context) : VehicleGateway {
                                 .mapValues { (_, b) -> b.minValue }
                         )
                     },
-                    { _ -> c.resume(emptyMap()) }
+                    { e -> logFailure("도어 지원 조회", e); c.resume(emptyMap()) }
                 )
             }
         }.getOrDefault(emptyMap())
@@ -109,7 +112,7 @@ class PleosVehicleGateway(context: Context) : VehicleGateway {
     private fun seatOccupied(area: SeatArea): Flow<Boolean> = callbackFlow {
         val l = object : SeatOccupancyListener {
             override fun onSeatOccupancyUpdated(value: Boolean?) { trySend(value == true) }
-            override fun onFailed(e: Exception) { /* 값 유지, 상위에서 타임아웃 처리 */ }
+            override fun onFailed(e: Exception) = logFailure("좌석 점유 구독", e) // 값은 유지한다
         }
         seat.getCurrentSeatOccupancy(area, { trySend(it == true) }, { /* 초기값 실패는 리스너 값으로 대체 */ })
         seat.registerSeatOccupancy(area, l)
@@ -119,7 +122,7 @@ class PleosVehicleGateway(context: Context) : VehicleGateway {
     private fun seatBuckled(area: SeatArea): Flow<Boolean> = callbackFlow {
         val l = object : SeatBeltBuckledStateListener {
             override fun onSeatBeltBuckledStateUpdated(value: Boolean?) { trySend(value == true) }
-            override fun onFailed(e: Exception) { }
+            override fun onFailed(e: Exception) = logFailure("벨트 구독", e)
         }
         seat.getCurrentSeatBeltBuckledState(area, { trySend(it == true) }, { })
         seat.registerSeatBeltBuckledState(area, l)
@@ -129,7 +132,7 @@ class PleosVehicleGateway(context: Context) : VehicleGateway {
     private fun doorOpen(area: DoorArea, closedValue: Int): Flow<Boolean> = callbackFlow {
         val l = object : DoorPositionListener {
             override fun onPositionUpdated(position: Int?) { trySend((position ?: closedValue) > closedValue) }
-            override fun onFailed(e: Exception) { }
+            override fun onFailed(e: Exception) = logFailure("도어 구독", e)
         }
         door.getCurrentDoorPosition(area, { pos -> trySend((pos ?: closedValue) > closedValue) }, { })
         door.registerDoorPosition(area, l)
@@ -166,6 +169,12 @@ class PleosVehicleGateway(context: Context) : VehicleGateway {
         else combine(this) { arr -> arr.count { it } }.distinctUntilChanged()
 
     private fun AccessType.canRead() = this == AccessType.READ || this == AccessType.READ_WRITE
+
+    // Error code 가이드: 예외의 errorCode로 원인(ERROR_DRIVING_RESTRICTED, ERROR_SECURITY_PERMISSION,
+    // ERROR_SERVICE_CONNECTION_FAILURE …)을 구분한다. 신호를 못 읽은 영역은 상위에서 수동 모드로 넘어간다.
+    private fun logFailure(where: String, e: Exception) {
+        Log.w(TAG, "$where 실패: ${e.message ?: e::class.java.simpleName}")
+    }
 }
 
 // 참고: SDK 콜백 값은 java.lang.Boolean/Integer(박싱)라 null 가능으로 다룬다.

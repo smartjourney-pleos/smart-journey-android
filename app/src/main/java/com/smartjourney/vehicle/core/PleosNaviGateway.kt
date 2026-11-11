@@ -22,26 +22,39 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.onSubscription
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelChildren
+import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.withTimeoutOrNull
 
 private const val ROUTE_TIMEOUT_MS = 15_000L
 private const val TRIP_TIMEOUT_MS = 5_000L
+
+// onRouteStarted는 "탐색 시작" 이벤트다(API Reference). 그 뒤 이 시간 안에 onError가 없으면 성공으로 본다.
+// 에뮬레이터 2.1.0은 onRoutingCompleted를 보내지 않아 이 확인이 필요하다.
+private const val ROUTE_STARTED_GRACE_MS = 2_000L
 
 class PleosNaviGateway(context: Context) : NaviGateway {
 
     private val navi = NaviHelper(context)
     private val connected = CompletableDeferred<Unit>()
 
-    // 경로 요청은 한 번에 하나만 기다린다. onRoutingCompleted·onRouteStarted / onError가 결과를 채운다.
+    // 경로 요청은 한 번에 하나만 기다린다. onRoutingCompleted / onError가 결과를 채우고,
+    // onRouteStarted는 탐색이 시작됐다는 표시만 남긴다.
     @Volatile private var pendingRoute: CompletableDeferred<Result<Unit>>? = null
+    @Volatile private var pendingStarted: CompletableDeferred<Unit>? = null
+    // trip 조회 실패(CAUSE_SEARCH_TRIP)가 오면 requestTrip이 타임아웃까지 기다리지 않게 한다
+    @Volatile private var pendingTripError: CompletableDeferred<Unit>? = null
 
     private val tripFlow = MutableSharedFlow<NaviTrip>(
         replay = 1, extraBufferCapacity = 8, onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
     private val arrivalFlow = MutableSharedFlow<ArrivalEvent>(extraBufferCapacity = 8)
+    private val routeChangedFlow = MutableSharedFlow<Unit>(extraBufferCapacity = 4)
 
     override val trip: Flow<NaviTrip> = tripFlow
     override val arrivals: Flow<ArrivalEvent> = arrivalFlow
+    override val routeChanged: Flow<Unit> = routeChangedFlow
 
     private val listener = object : NaviHelperEventListener {
         override fun onTripInfo(info: TripInfo) {
@@ -61,14 +74,25 @@ class PleosNaviGateway(context: Context) : NaviGateway {
             pendingRoute?.complete(Result.success(Unit))
         }
 
-        // Pleos Connect 에뮬레이터 2.1.0은 onRoutingCompleted 없이 onRouteStarted만 보낸다. (경로 계산 뒤 안내 시작)
         override fun onRouteStarted(info: RouteStartInfo) {
-            pendingRoute?.complete(Result.success(Unit))
+            pendingStarted?.complete(Unit)
+        }
+
+        // 우리가 경로를 요청하는 중이 아닐 때만 운전자의 조작으로 본다
+        override fun onRouteCancelled() {
+            if (pendingRoute == null) routeChangedFlow.tryEmit(Unit)
+        }
+
+        override fun onDestinationChanged() {
+            if (pendingRoute == null) routeChangedFlow.tryEmit(Unit)
         }
 
         override fun onError(errorCode: NaviErrorCode) {
             // trip 조회 실패는 진행 중인 경로 요청의 실패가 아니다.
-            if (errorCode == NaviErrorCode.CAUSE_SEARCH_TRIP) return
+            if (errorCode == NaviErrorCode.CAUSE_SEARCH_TRIP) {
+                pendingTripError?.complete(Unit)
+                return
+            }
             pendingRoute?.complete(Result.failure(NaviException(errorCode.name)))
         }
     }
@@ -86,13 +110,23 @@ class PleosNaviGateway(context: Context) : NaviGateway {
     override suspend fun requestTrip(dest: Place): NaviTrip? {
         connected.await()
         // 구독을 먼저 걸고 요청한다. 기억해 둔 예전 값(replay)은 건너뛰고 새로 온 값만 받는다.
-        return withTimeoutOrNull(TRIP_TIMEOUT_MS) {
-            tripFlow
-                .onSubscription {
-                    navi.requestTrip(TripRequest(dest.latitude, dest.longitude, dest.poiId, dest.name, dest.poiSubId))
-                }
-                .drop(tripFlow.replayCache.size)
-                .first()
+        val tripError = CompletableDeferred<Unit>().also { pendingTripError = it }
+        return try {
+            withTimeoutOrNull(TRIP_TIMEOUT_MS) {
+                select {
+                    async {
+                        tripFlow
+                            .onSubscription {
+                                navi.requestTrip(TripRequest(dest.latitude, dest.longitude, dest.poiId, dest.name, dest.poiSubId))
+                            }
+                            .drop(tripFlow.replayCache.size)
+                            .first()
+                    }.onAwait { it }
+                    tripError.onAwait { null }
+                }.also { coroutineContext.cancelChildren() }
+            }
+        } finally {
+            pendingTripError = null
         }
     }
 
@@ -107,6 +141,7 @@ class PleosNaviGateway(context: Context) : NaviGateway {
         }
 
         val result = CompletableDeferred<Result<Unit>>().also { pendingRoute = it }
+        val started = CompletableDeferred<Unit>().also { pendingStarted = it }
         try {
             if (waypoints.isEmpty()) {
                 navi.requestRoute(dest.toRouteInfo())
@@ -119,10 +154,17 @@ class PleosNaviGateway(context: Context) : NaviGateway {
                     ),
                 )
             }
-            return withTimeoutOrNull(ROUTE_TIMEOUT_MS) { result.await() }
-                ?: Result.failure(NaviException("경로 탐색 응답 없음"))
+            return withTimeoutOrNull(ROUTE_TIMEOUT_MS) {
+                select {
+                    result.onAwait { it }
+                    started.onAwait {
+                        withTimeoutOrNull(ROUTE_STARTED_GRACE_MS) { result.await() } ?: Result.success(Unit)
+                    }
+                }
+            } ?: Result.failure(NaviException("경로 탐색 응답 없음"))
         } finally {
             pendingRoute = null
+            pendingStarted = null
         }
     }
 
@@ -138,7 +180,7 @@ class PleosNaviGateway(context: Context) : NaviGateway {
         displayLongitude = null,
         poiName = name,
         poiId = poiId,
-        address = "",
+        address = address,
         poiSubId = poiSubId,
         routeOption = RouteOption.RECOMMENDED,
         poiProvider = "",
@@ -151,7 +193,7 @@ class PleosNaviGateway(context: Context) : NaviGateway {
         poiName = name,
         waypointIndex = index,
         poiId = poiId,
-        address = "",
+        address = address,
         poiSubId = poiSubId,
         poiProvider = "",
     )

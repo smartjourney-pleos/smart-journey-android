@@ -31,9 +31,11 @@ class DemoController(private val scope: CoroutineScope) {
     val arrivals: SharedFlow<Unit> = _arrivals
 
     init {
-        scope.launch {
+        // 배포 빌드에서는 1초 타이머를 돌리지 않는다 (불필요한 상주·타이머 최소화)
+        if (BuildConfig.DEBUG) scope.launch {
             while (true) {
                 delay(1_000)
+                if (!enabled.value) continue
                 val sec = remainingSec.value ?: continue
                 if (!restricted.value || sec <= 0) continue
                 val next = (sec - speed.value).coerceAtLeast(0)

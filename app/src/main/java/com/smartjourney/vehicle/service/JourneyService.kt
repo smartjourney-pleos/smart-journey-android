@@ -68,9 +68,14 @@ class JourneyService : Service() {
             engine.state.map { it.prompt }.distinctUntilChanged { a, b -> a?.id == b?.id }.collectLatest { prompt ->
                 Notices.cancelPrompt(this@JourneyService)
                 if (prompt == null) return@collectLatest
-                // 카드 화면을 바로 띄워 본다. 앱이 보이는 중이거나 "다른 앱 위에 표시"가 허용돼 있으면 뜬다.
+                // 주행 중에는 헤드업 알림만 쓴다. 카드 Activity는 앱 영역 전체를 차지해 지도를 가릴 수 있다
+                // (Pleos Window Policy). 운전자가 배너를 누르면 그때 카드가 열린다.
+                if (engine.state.value.restricted) {
+                    Notices.postPrompt(this@JourneyService, prompt)
+                    return@collectLatest
+                }
+                // 정차 중에는 카드 화면을 바로 띄워 본다. 백그라운드에서 시스템이 막으면 헤드업 알림으로 묻는다.
                 Notices.openCard(this@JourneyService)
-                // 백그라운드에서 시스템이 막았으면(Android 14 기본 동작) 헤드업 알림으로 묻는다. 누르면 카드가 열린다.
                 delay(CARD_GRACE_MS)
                 if (!ApprovalActivity.isShowing) Notices.postPrompt(this@JourneyService, prompt)
             }
@@ -78,7 +83,8 @@ class JourneyService : Service() {
         scope.launch { engine.notices.collect { Notices.result(this@JourneyService, it) } }
     }
 
-    // 여정 상태는 메모리에만 있어서, 프로세스가 죽은 뒤 서비스만 되살아나도 할 일이 없다
+    // ponytail: 여정 상태는 메모리에만 있다. 서버(FakeBackend)도 메모리라 지금은 복원할 대상이 없다.
+    // 실서버 연동 때 GET /journeys/current로 복원하고 START_STICKY로 바꾼다 (명세서 4.4).
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_NOT_STICKY
 
     override fun onDestroy() {
@@ -160,7 +166,6 @@ object Notices {
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setOngoing(true)
             .setContentIntent(open)
-            .setFullScreenIntent(open, true)
             .addAction(0, text.primary, action(context, ACTION_APPROVE, prompt.id))
             .apply { text.secondary?.let { addAction(0, it, action(context, ACTION_DEFER, prompt.id)) } }
             .build()

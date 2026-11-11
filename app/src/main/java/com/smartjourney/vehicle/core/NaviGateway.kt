@@ -12,13 +12,10 @@ data class Place(
     val name: String,
     val poiId: String = "",
     val poiSubId: String = "",
+    val address: String = "",
 )
 
-/**
- * `onTripInfo` 값. 문서에는 단위가 없다. 에뮬레이터 2.1.0에서 같은 구간의 내비 엔진 로그
- * (reachTime 1965 / reachDist 21895)와 크기를 대조해 eta=초, distance=미터로 본다.
- * ponytail: 실차에서 단위가 다르면 이 두 필드의 변환만 고친다.
- */
+/** `onTripInfo` 값. NaviHelper API Reference(TripInfo): eta는 초, distance는 미터. */
 data class NaviTrip(val eta: Int, val distance: Int)
 
 sealed interface ArrivalEvent {
@@ -34,10 +31,16 @@ interface NaviGateway {
     val trip: Flow<NaviTrip>
     val arrivals: Flow<ArrivalEvent>
 
+    /** 운전자가 내비에서 경로를 취소했거나 목적지를 바꿨다 (`onRouteCancelled`, `onDestinationChanged`). */
+    val routeChanged: Flow<Unit>
+
     /** [dest]까지의 trip 정보를 요청하고 그 결과를 돌려준다([trip]으로도 온다). 응답이 없으면 null. */
     suspend fun requestTrip(dest: Place): NaviTrip?
 
-    /** 목적지와 경유지(최대 2개)로 경로를 요청한다. 경로가 잡힐 때(`onRoutingCompleted` 또는 `onRouteStarted`)까지 기다린다. */
+    /**
+     * 목적지와 경유지(최대 2개)로 경로를 요청한다. `onRoutingCompleted`가 오면 성공이다.
+     * `onRouteStarted`(탐색 시작)만 오면 뒤이은 `onError`가 없는지 잠시 확인한 뒤 성공으로 본다.
+     */
     suspend fun setRoute(dest: Place, waypoints: List<Place> = emptyList()): Result<Unit>
 
     fun release()

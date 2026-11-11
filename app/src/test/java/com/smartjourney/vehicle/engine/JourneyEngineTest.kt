@@ -8,6 +8,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
@@ -25,12 +26,13 @@ class JourneyEngineTest {
         val doorOpen = MutableStateFlow(false)
         val driving = MutableStateFlow(true)
         val remaining = MutableStateFlow(30 * 60)
-        val arrive = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+        val arrive = MutableSharedFlow<Arrival>(extraBufferCapacity = 1)
 
         override val occupied: Flow<Int> = occupiedNow
         override val anyDoorOpen: Flow<Boolean> = doorOpen
         override val restricted: Flow<Boolean> = driving
-        override val arrivals: Flow<Unit> = arrive
+        override val arrivals: Flow<Arrival> = arrive
+        override val routeChanged: Flow<Unit> = emptyFlow()
         override fun remainingSec(target: Store): Flow<Int> = remaining
         override suspend fun sensorsSupported() = true
         override suspend fun readNow() = VehicleSnapshot(occupiedNow.value, null, doorOpen.value)
@@ -65,7 +67,7 @@ class JourneyEngineTest {
 
         // 도착 → 정차 → 문 열림 → 1명 남고 문 닫힘 → 5초 유지
         signals.remaining.value = 0
-        signals.arrive.tryEmit(Unit)
+        signals.arrive.tryEmit(Arrival.Current)
         runCurrent()
         signals.driving.value = false
         signals.doorOpen.value = true
@@ -139,5 +141,22 @@ class JourneyEngineTest {
         assertEquals("B 카페", engine.state.value.current?.store?.name)
         assertEquals(StopPhase.SEATED, engine.state.value.stops[0].phase)
         assertTrue(engine.state.value.active)
+    }
+
+    @Test
+    fun 다른_매장의_도착_신호는_무시한다() = runTest {
+        val engine = startedEngine(stores = 2)
+        signals.remaining.value = 20 * 60
+        runCurrent()
+        engine.approve()
+        runCurrent()
+
+        signals.arrive.tryEmit(Arrival.Destination) // 마지막 매장(B 카페) 도착 → 지금은 A 맛집
+        runCurrent()
+        assertEquals(null, engine.state.value.alight)
+
+        signals.arrive.tryEmit(Arrival.Waypoint(1)) // 첫 경유지 = A 맛집
+        runCurrent()
+        assertEquals(com.smartjourney.vehicle.domain.AlightDetector.State.WAIT_STOP, engine.state.value.alight)
     }
 }
