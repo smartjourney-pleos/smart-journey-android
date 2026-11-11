@@ -20,7 +20,7 @@ class FakeNaviGateway : NaviGateway {
     fun emitTrip(eta: Int, distance: Int = 0) { tripFlow.tryEmit(NaviTrip(eta, distance)) }
     fun emitArrival(event: ArrivalEvent) { arrivalFlow.tryEmit(event) }
 
-    override suspend fun requestTrip(dest: Place) = Unit
+    override suspend fun requestTrip(dest: Place): NaviTrip? = tripFlow.replayCache.lastOrNull()
 
     override suspend fun setRoute(dest: Place, waypoints: List<Place>): Result<Unit> {
         if (waypoints.size > 2) return Result.failure(IllegalArgumentException("경유지는 최대 2개"))

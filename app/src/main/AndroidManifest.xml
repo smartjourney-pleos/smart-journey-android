@@ -10,12 +10,21 @@
     <uses-permission android:name="pleos.car.permission.NAVI_ROUTE_SEARCH" />
 
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- 백그라운드 엔진(JourneyService)과 상태 알림·승인 카드 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <!-- "다른 앱 위에 표시"를 허용받으면 승인 카드를 내비 위에 바로 띄울 수 있다. 없으면 헤드업 알림으로 대신한다. -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <application
+        android:name=".SmartJourneyApp"
         android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
         android:label="스마트 저니"
-        android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
+        android:theme="@android:style/Theme.DeviceDefault.Light.NoActionBar">
 
         <activity
             android:name=".MainActivity"
@@ -25,6 +34,31 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- 승인 카드. 별도 태스크로 떠서 닫히면 아래 화면(내비)이 그대로 남는다. 주행 중 표시 대상(DO). -->
+        <activity
+            android:name=".ui.ApprovalActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:taskAffinity="com.smartjourney.vehicle.approval">
+            <meta-data
+                android:name="distractionOptimized"
+                android:value="true" />
+        </activity>
+
+        <service
+            android:name=".service.JourneyService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="내비 경로를 따라 웨이팅 시점과 도착·하차를 확인하는 여정 엔진" />
+        </service>
+
+        <receiver
+            android:name=".service.PromptActionReceiver"
+            android:exported="false" />
 
     </application>
 </manifest>

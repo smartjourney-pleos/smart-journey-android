@@ -7,6 +7,7 @@ plugins {
 android {
     namespace = "com.smartjourney.vehicle"
     compileSdk = 35
+    useLibrary("android.car") // CarUxRestrictionsManager (주행 규제 상태)
 
     defaultConfig {
         applicationId = "com.smartjourney.vehicle"
@@ -30,6 +31,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 

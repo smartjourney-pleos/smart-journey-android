@@ -19,9 +19,13 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.onSubscription
 import kotlinx.coroutines.withTimeoutOrNull
 
 private const val ROUTE_TIMEOUT_MS = 15_000L
+private const val TRIP_TIMEOUT_MS = 5_000L
 
 class PleosNaviGateway(context: Context) : NaviGateway {
 
@@ -79,9 +83,17 @@ class PleosNaviGateway(context: Context) : NaviGateway {
         )
     }
 
-    override suspend fun requestTrip(dest: Place) {
+    override suspend fun requestTrip(dest: Place): NaviTrip? {
         connected.await()
-        navi.requestTrip(TripRequest(dest.latitude, dest.longitude, dest.poiId, dest.name, dest.poiSubId))
+        // 구독을 먼저 걸고 요청한다. 기억해 둔 예전 값(replay)은 건너뛰고 새로 온 값만 받는다.
+        return withTimeoutOrNull(TRIP_TIMEOUT_MS) {
+            tripFlow
+                .onSubscription {
+                    navi.requestTrip(TripRequest(dest.latitude, dest.longitude, dest.poiId, dest.name, dest.poiSubId))
+                }
+                .drop(tripFlow.replayCache.size)
+                .first()
+        }
     }
 
     override suspend fun setRoute(dest: Place, waypoints: List<Place>): Result<Unit> {
