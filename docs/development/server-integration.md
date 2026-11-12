@@ -11,12 +11,12 @@
 
 | 순서 | 호출 | 앱 처리 | 서버 상태(468eec5) |
 | --- | --- | --- | --- |
-| 1 | `GET /api/v1/consent/notice` → `POST /api/v1/devices {consentVersion}` | 응답 `deviceToken`을 `X-Device-Token` 헤더로 사용. 401이면 다시 등록 | 동작 |
+| 1 | `GET /api/v1/consent/notice` → `POST /api/v1/devices {consentVersion}` | 앱에서 동의한 경우에만 호출. 서버 고지 `version`이 앱의 `CONSENT_VERSION`(현재 `2026-11-11`)과 다르면 등록하지 않는다 → 서버 설정의 현재 고지 버전을 앱과 맞춰야 한다. 응답 `deviceToken`을 `X-Device-Token` 헤더로 사용, 401이면 다시 등록 | 동작 |
 | 2 | `GET /api/v1/stores` | 매장 목록(이름·주소·좌표·POI)으로 내비 경로 입력 | 동작 |
 | 3 | `GET /api/v1/stores/{id}/queue-status` (3초 조회) | `estimatedWaitMin`·`arrivalBufferMin`으로 제안 시점 계산 | 동작 |
 | 4 | `POST /api/v1/journeys {partySize, partySource, storeIds}` | 방문 시작 때. `ACTIVE_JOURNEY_EXISTS`면 `GET /journeys/current` → `POST /journeys/{id}/end` 후 다시 생성 | 미구현 |
 | 5 | `POST /api/v1/waitings {journeyId, storeId, partySize, approvalMethod}` + `Idempotency-Key: <질문 ID>` | 음성 승인 1회당 1번. 같은 키로 다시 오면 같은 웨이팅을 돌려줘야 한다 | 미구현 |
-| 6 | `GET /api/v1/waitings/{id}` (3초 조회) | `status`(REGISTERED·ARRIVED·CALLED·SEATED·NO_SHOW·CANCELLED), `ticketNo`, `aheadTeams`, `estimatedWaitMin` | 미구현 |
+| 6 | `GET /api/v1/waitings/{id}` (3초 조회) | `status`(REGISTERED·ARRIVED·CALLED·SEATED·NO_SHOW·CANCELLED), `ticketNo`, `aheadTeams`, `estimatedWaitMin`. 모르는 상태값은 반영하지 않는다 | 미구현 |
 | 7 | `PUT /api/v1/waitings/{id}/eta {etaMin}` | 2분 이상 바뀌거나 1분 주기 | 미구현 |
 | 8 | `POST /api/v1/waitings/{id}/arrival {result, alighted?, partySize}` | `CONFIRMED`(alighted 포함)·`MANUAL`·`UNCONFIRMED` | 미구현 |
 | 9 | `DELETE /api/v1/waitings/{id}` | 현재 앱은 자동 호출하지 않음(사용자 승인 없는 취소 금지) | 미구현 |

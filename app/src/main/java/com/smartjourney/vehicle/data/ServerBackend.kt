@@ -29,7 +29,11 @@ class ServerException(val status: Int, val apiCode: String?, message: String) : 
  * ponytail: STOMP 대신 REST 조회. 지연이 문제가 되면 /topic/waitings/{id} 구독으로 바꾼다.
  * ponytail: 기기 토큰은 메모리에만 둔다(프로세스가 바뀌면 다시 등록). 실서비스는 Keystore로 암호화해 저장한다.
  */
-class ServerBackend(private val baseUrl: String) : WaitingBackend {
+class ServerBackend(
+    private val baseUrl: String,
+    /** 사용자가 앱에서 동의한 고지 버전. null이면 동의 전·철회 상태라 서버를 부르지 않는다. */
+    private val consentVersion: () -> String?,
+) : WaitingBackend {
 
     /** 서버의 매장도 시연용 가상 매장이다. */
     override val isDemo = true
@@ -109,11 +113,18 @@ class ServerBackend(private val baseUrl: String) : WaitingBackend {
         }
     }.distinctUntilChanged()
 
-    private suspend fun ensureToken(): String = token ?: run {
-        // 사용자는 앱의 동의 화면에서 동의했다. 서버가 요구하는 현재 고지 버전으로 기기를 등록한다.
+    private suspend fun ensureToken(): String {
+        val agreed = consentVersion()
+        if (agreed == null) {
+            token = null
+            throw IOException("데이터 전송 동의가 필요해요")
+        }
+        token?.let { return it }
+        // 사용자가 본 고지와 서버의 현재 고지가 같을 때만 등록한다. 다르면 다시 동의받아야 한다.
         val version = JSONObject(raw("GET", "/api/v1/consent/notice", null, null, auth = false)).getString("version")
-        val registered = JSONObject(raw("POST", "/api/v1/devices", JSONObject().put("consentVersion", version), null, auth = false))
-        registered.getString("deviceToken").also { token = it }
+        if (version != agreed) throw IOException("서버의 고지 버전($version)이 앱에서 동의한 버전($agreed)과 달라요")
+        val registered = JSONObject(raw("POST", "/api/v1/devices", JSONObject().put("consentVersion", agreed), null, auth = false))
+        return registered.getString("deviceToken").also { token = it }
     }
 
     private suspend fun request(method: String, path: String, body: JSONObject? = null, idempotencyKey: String? = null): JSONObject =
@@ -156,7 +167,8 @@ class ServerBackend(private val baseUrl: String) : WaitingBackend {
         storeId = getLong("storeId"),
         ticketNo = getInt("ticketNo"),
         partySize = getInt("partySize"),
-        status = runCatching { WaitingStatus.valueOf(getString("status")) }.getOrDefault(WaitingStatus.REGISTERED),
+        // 모르는 상태를 '접수됨'으로 바꾸지 않는다. 예외가 나면 이번 조회는 반영하지 않고 마지막 상태를 유지한다.
+        status = WaitingStatus.valueOf(getString("status")),
         aheadTeams = getInt("aheadTeams"),
         estimatedWaitMin = getInt("estimatedWaitMin"),
     )

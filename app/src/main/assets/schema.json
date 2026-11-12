@@ -2,7 +2,7 @@
   "packageName": "com.smartjourney.vehicle",
   "appDescription": "Smart Journey tracks navigation destinations and manages restaurant waiting requests after explicit user approval.",
   "invokeWord": "스마트 저니",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "actionCalls": [
     {
       "type": "function",

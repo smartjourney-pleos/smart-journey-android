@@ -148,10 +148,10 @@ private fun TopBar(restricted: Boolean, showDemo: Boolean, onToggleDemo: () -> U
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text("스마트 저니", style = Type.Title)
-                    if (!LocalCompact.current) Text(if (restricted) "주행 규제 중 · 음성 안내" else "방문 준비 · 결과 확인", style = Type.Caption)
+                    if (!LocalCompact.current) Text(if (restricted) "주행 중 · 음성으로 안내해요" else "방문 준비 · 결과 확인", style = Type.Caption)
                 }
                 Badge("시연용 데이터 · 실제 매장 미접수", Palette.Orange)
-                if (restricted) Badge("주행 규제 적용 중", Palette.Orange)
+                if (restricted) Badge("주행 중 조작 제한", Palette.Orange)
                 if (BuildConfig.DEBUG) SmallButton(if (showDemo) "데모 닫기" else "데모", onToggleDemo)
             }
             HorizontalDivider(color = Palette.Line)
@@ -184,10 +184,10 @@ private fun Tabs(selected: Tab, issueCount: Int, onSelect: (Tab) -> Unit) {
     }
 }
 
-/** 값의 출처. 실제 SDK 값과 데모 입력을 화면에서 구분한다. */
+/** 값의 출처. 실제 차량·내비 값과 시연 입력을 화면에서 구분한다. */
 @Composable
 private fun SourceBadge(real: Boolean, label: String) =
-    Badge(if (real) "실제 SDK · $label" else "데모 입력 · $label", if (real) Palette.Green else Palette.Gray)
+    Badge(if (real) "실제 · $label" else "시연 입력 · $label", if (real) Palette.Green else Palette.Gray)
 
 // ---------- 핵심 1. 동의 V-00 ----------
 
@@ -199,7 +199,7 @@ private fun ConsentScreen(graph: AppGraph) {
     Text("도착 예상과 대기를 비교하고, 승인한 접수만 요청해요.", style = Type.Body)
     Panel {
         Text("데이터 이용 안내", style = Type.Title)
-        Text("항목: 매장 식별자·도착 예상·방문 인원·접수 상태·하차 추정", style = Type.Body)
+        Text("항목: 방문 매장·도착 예상·방문 인원·접수 상태·하차 인원", style = Type.Body)
         Text("위치 좌표·이동 경로·차대번호는 보내지 않아요.", style = Type.Label)
         Text("수신처: 스마트 저니 서버·접수한 매장\n보관: ${RETENTION_DAYS}일 후 삭제", style = Type.Label)
         Text("현재는 시연용 접수이며 실제 매장에는 접수되지 않아요.", style = Type.Caption)
@@ -207,8 +207,8 @@ private fun ConsentScreen(graph: AppGraph) {
     }
     Panel {
         Text("차량 기능", style = Type.Title)
-        Text(support?.let { "좌석 ${if (it.seat) "지원" else "미지원"} · 도어 ${if (it.door) "지원" else "미지원"} · 주행 규제 ${if (it.drivingState) "지원" else "미지원"}" } ?: "차량 기능 확인 중", style = Type.Label)
-        Text("좌석 미지원 시 인원을 직접 입력해요. 규제 상태가 불명이면 조작을 제한해요.", style = Type.Caption)
+        Text(support?.let { "좌석 ${if (it.seat) "지원" else "미지원"} · 도어 ${if (it.door) "지원" else "미지원"} · 주행 상태 ${if (it.drivingState) "지원" else "미지원"}" } ?: "차량 기능 확인 중", style = Type.Label)
+        Text("좌석을 알 수 없으면 인원을 직접 입력해요. 주행 상태를 알 수 없으면 조작을 제한해요.", style = Type.Caption)
     }
     BigButton("동의하고 시작", { graph.setConsent(true) }, Modifier.fillMaxWidth())
     SmallButton("나중에", { later = true }, Modifier.fillMaxWidth())
@@ -386,8 +386,7 @@ private fun StatusScreen(graph: AppGraph, journey: JourneyState) {
                 if (journey.prompt == null) Panel {
                     Text("다음 행동", style = Type.Label)
                     Text(nextAction(stop), style = Type.Title)
-                    Text("접수 시각: 정보 없음 · 갱신 시각: 정보 없음", style = Type.Caption)
-                    Text(if (waiting != null) "접수 응답 수신 · 실제 매장 미접수" else "매장 접수 확정 전 · 승인 없이 실행하지 않아요", style = Type.Caption)
+                    Text(if (waiting != null) "접수 확인됨 · 실제 매장 미접수" else "아직 접수 전 · 승인한 경우에만 접수해요", style = Type.Caption)
                 }
                 if (stop.arrival != null || journey.alight?.let { it != AlightDetector.State.WAIT_ARRIVAL } == true) ArrivalPanel(graph, journey, stop)
                 journey.prompt?.let { PromptCard(graph, it) }
@@ -403,10 +402,10 @@ private fun StatusScreen(graph: AppGraph, journey: JourneyState) {
     }
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         when (etaSource) {
-            EtaSource.NAVI_LIVE -> SourceBadge(true, "ETA 실시간")
-            EtaSource.NAVI_REQUEST -> SourceBadge(true, "ETA 조회")
-            EtaSource.DEMO -> SourceBadge(false, "ETA")
-            null -> Badge("ETA 정보 없음", Palette.Gray)
+            EtaSource.NAVI_LIVE -> SourceBadge(true, "내비 도착 예상")
+            EtaSource.NAVI_REQUEST -> SourceBadge(true, "내비 도착 예상")
+            EtaSource.DEMO -> SourceBadge(false, "도착 예상")
+            null -> Badge("도착 예상 정보 없음", Palette.Gray)
         }
         SourceBadge(!useDemo, "좌석·도어")
     }
@@ -553,7 +552,7 @@ private fun rememberIssues(graph: AppGraph, journey: JourneyState): List<Issue> 
         if (!useDemo && support?.seat == false) add(Issue("좌석 센서 미지원", "방문 인원은 직접 입력해 주세요."))
         if (!useDemo && support?.door == false) add(Issue("도어 신호 미지원", "하차는 자동으로 추정하지 않고 직접 확인해요."))
         versions.filterNot { it.ok }.forEach {
-            add(Issue("${it.label} 서비스 확인 필요", "서비스 ${it.installed ?: "미설치"} · ${it.required} 이상이 필요해요."))
+            add(Issue("차량 소프트웨어 업데이트 필요", "내비·차량 기능 연결이 원활하지 않을 수 있어요. 차량 소프트웨어를 최신으로 업데이트해 주세요."))
         }
     }
 }
@@ -561,7 +560,7 @@ private fun rememberIssues(graph: AppGraph, journey: JourneyState): List<Issue> 
 @Composable
 private fun IssuesScreen(graph: AppGraph, issues: List<Issue>) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("예외·미지원", style = Type.Label)
+        Text("확인이 필요한 항목", style = Type.Label)
         Text(if (issues.isEmpty()) "확인할 문제가 없어요" else "안전하게 정차한 뒤 확인해 주세요", style = Type.Headline)
     }
     issues.forEach { issue ->
@@ -574,15 +573,8 @@ private fun IssuesScreen(graph: AppGraph, issues: List<Issue>) {
     if (voiceIssue != null) SmallButton("음성 오류 확인함", { graph.voiceIssue.value = null })
     Panel {
         Text("지원하지 않는 매장·기능", style = Type.Title)
-        Text("목록에 없는 매장은 예약·웨이팅 연동을 지원하지 않아요. 임의 대기시간이나 번호를 만들지 않아요.", style = Type.Body)
-        Text("매장 전화 연결과 공식 예약 연동은 아직 지원하지 않아요 (계획).", style = Type.Body)
-    }
-    val context = LocalContext.current
-    val versions = remember(context) { readServiceVersions(context) }
-    Panel {
-        Text("연결 환경", style = Type.Title)
-        versions.forEach { Text("${it.label} SDK ${it.sdk} · 서비스 ${it.installed ?: "설치되지 않음"}", style = Type.Label) }
-        Text("음성: Pleos Speech SDK 3.3.1 (TTS → STT) · Gleo App Schema 2개 등록", style = Type.Label)
+        Text("목록에 없는 매장은 접수를 지원하지 않아요.", style = Type.Body)
+        Text("매장 전화 연결과 예약은 아직 지원하지 않아요.", style = Type.Body)
     }
 }
 

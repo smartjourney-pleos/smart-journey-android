@@ -80,7 +80,7 @@ class AppGraph(private val context: Context) {
     val useServer = MutableStateFlow(false)
     val backend = SwitchingBackend(
         fake = FakeBackend(),
-        server = BuildConfig.SERVER_URL.takeIf { it.isNotBlank() }?.let(::ServerBackend),
+        server = BuildConfig.SERVER_URL.takeIf { it.isNotBlank() }?.let { url -> ServerBackend(url) { CONSENT_VERSION.takeIf { consented.value } } },
         useServer = { useServer.value },
     )
 
