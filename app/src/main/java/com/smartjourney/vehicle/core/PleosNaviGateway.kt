@@ -8,6 +8,7 @@ import ai.pleos.playground.navi.data.NavigationScreenRequest
 import ai.pleos.playground.navi.data.RequestWaypointInfo
 import ai.pleos.playground.navi.data.RouteInfo
 import ai.pleos.playground.navi.data.RouteStartInfo
+import ai.pleos.playground.navi.data.RouteStateInfo
 import ai.pleos.playground.navi.data.RouteWithWaypointsRequest
 import ai.pleos.playground.navi.data.TripInfo
 import ai.pleos.playground.navi.data.TripRequest
@@ -20,6 +21,10 @@ import android.util.Log
 import com.smartjourney.vehicle.BuildConfig
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -37,12 +42,11 @@ private const val TRIP_TIMEOUT_MS = 5_000L
 // onRouteStarted는 "탐색 시작" 이벤트다(API Reference). 그 뒤 이 시간 안에 onError가 없으면 성공으로 본다.
 // 에뮬레이터 2.1.0은 onRoutingCompleted를 보내지 않아 이 확인이 필요하다.
 private const val ROUTE_STARTED_GRACE_MS = 2_000L
-// 경로 요청이 끝난 뒤 이전 경로의 취소 이벤트가 늦게 올 수 있는 시간
-private const val ROUTE_SETTLE_MS = 3_000L
 
 class PleosNaviGateway(context: Context) : NaviGateway {
 
     private val navi = NaviHelper(context)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val connected = CompletableDeferred<Unit>()
 
     // 경로 요청은 한 번에 하나만 기다린다. onRoutingCompleted / onError가 결과를 채우고,
@@ -57,16 +61,16 @@ class PleosNaviGateway(context: Context) : NaviGateway {
     )
     private val arrivalFlow = MutableSharedFlow<ArrivalEvent>(extraBufferCapacity = 8)
     private val routeChangedFlow = MutableSharedFlow<Unit>(extraBufferCapacity = 4)
-    private val routeCancelledFlow = MutableSharedFlow<Unit>(extraBufferCapacity = 4)
-    // 우리 경로 요청이 끝난 시각. 이전 경로를 바꾸며 늦게 오는 취소 이벤트를 운전자의 조작으로 오인하지 않는다.
-    @Volatile private var routeSettledAt = -ROUTE_SETTLE_MS
+    private val routeStateFlow = MutableSharedFlow<Boolean>(extraBufferCapacity = 4)
+    // 이전 경로를 바꾸며 오는 취소 이벤트를 운전자의 "안내 종료"로 오인하지 않는다.
+    private val cancelFilter = RouteCancelFilter(scope, SystemClock::elapsedRealtime, ::currentlyRouting) {
+        if (BuildConfig.DEBUG) Log.i("SJ-NAVI", it)
+    }
 
     override val trip: Flow<NaviTrip> = tripFlow
     override val arrivals: Flow<ArrivalEvent> = arrivalFlow
     override val routeChanged: Flow<Unit> = routeChangedFlow
-    override val routeCancelled: Flow<Unit> = routeCancelledFlow
-
-    private fun ownRouteRequest() = pendingRoute != null || SystemClock.elapsedRealtime() - routeSettledAt < ROUTE_SETTLE_MS
+    override val routeCancelled: Flow<Unit> = cancelFilter.cancelled
 
     private val listener = object : NaviHelperEventListener {
         override fun onTripInfo(info: TripInfo) {
@@ -92,15 +96,16 @@ class PleosNaviGateway(context: Context) : NaviGateway {
             pendingStarted?.complete(Unit)
         }
 
-        // 우리가 경로를 요청하는 중이 아닐 때만 운전자의 조작으로 본다. 취소와 목적지 변경은 따로 전달한다.
-        override fun onRouteCancelled() {
-            val own = ownRouteRequest()
-            if (BuildConfig.DEBUG) Log.i("SJ-NAVI", "onRouteCancelled own=$own")
-            if (!own) routeCancelledFlow.tryEmit(Unit)
+        override fun onRouteCancelled() = cancelFilter.onRouteCancelled()
+
+        // isRouting은 활성 경로 유무다. 우리가 요청하지 않은 응답(다른 앱의 조회)도 현재 상태라 같이 받는다.
+        override fun onRouteStateInfo(routeStateInfo: RouteStateInfo) {
+            routeStateFlow.tryEmit(routeStateInfo.isRouting)
         }
 
+        // 목적지 변경은 경로 교체 때도 활성 경로가 남아 상태 조회로 가릴 수 없다. 우리가 경로를 요청하는 중·직후가 아닐 때만 전달한다.
         override fun onDestinationChanged() {
-            val own = ownRouteRequest()
+            val own = cancelFilter.ownRouteRequest()
             if (BuildConfig.DEBUG) Log.i("SJ-NAVI", "onDestinationChanged own=$own")
             if (!own) routeChangedFlow.tryEmit(Unit)
         }
@@ -159,6 +164,7 @@ class PleosNaviGateway(context: Context) : NaviGateway {
         }
 
         val result = CompletableDeferred<Result<Unit>>().also { pendingRoute = it }
+        cancelFilter.requestStarted()
         val started = CompletableDeferred<Unit>().also { pendingStarted = it }
         try {
             if (waypoints.isEmpty()) {
@@ -181,9 +187,9 @@ class PleosNaviGateway(context: Context) : NaviGateway {
                 }
             } ?: Result.failure(NaviException("경로 탐색 응답 없음"))
         } finally {
-            routeSettledAt = SystemClock.elapsedRealtime()
             pendingRoute = null
             pendingStarted = null
+            cancelFilter.requestFinished()
         }
     }
 
@@ -201,7 +207,17 @@ class PleosNaviGateway(context: Context) : NaviGateway {
         }
     }
 
+    /** 내비에 현재 활성 경로가 있는지 묻는다. 응답은 onRouteStateInfo로 온다. 조회하지 못하면 null. */
+    private suspend fun currentlyRouting(): Boolean? = try {
+        routeStateFlow.onSubscription { navi.getRouteStateInfo() }.first()
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Exception) {
+        null
+    }
+
     override fun release() {
+        scope.cancel()
         navi.removeListener(listener)
         navi.release()
     }
