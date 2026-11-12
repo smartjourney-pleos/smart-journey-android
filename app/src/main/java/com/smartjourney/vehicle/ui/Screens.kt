@@ -237,7 +237,8 @@ private fun HomeScreen(graph: AppGraph, journey: JourneyState, onShowStatus: () 
     val sensed by remember(graph) { graph.signals.occupied.debounce(5_000) }.collectAsStateWithLifecycle(initialValue = null)
     var manual by rememberSaveable { mutableStateOf<Int?>(null) }
     var picked by rememberSaveable { mutableStateOf(listOf<Long>()) }
-    var starting by remember { mutableStateOf(false) }
+    // 앱 범위의 진행 상태를 따른다. 탭을 바꿔도 시작 중에는 버튼이 다시 켜지지 않는다.
+    val starting by graph.preparingJourney.collectAsStateWithLifecycle()
     val startError by graph.startError.collectAsStateWithLifecycle()
     val suggestion = sensed?.takeIf { it > 0 && (useDemo || support?.seat == true) }
     val party = manual ?: suggestion
@@ -285,11 +286,9 @@ private fun HomeScreen(graph: AppGraph, journey: JourneyState, onShowStatus: () 
                     Text("${picked.size}곳 · ${party?.let { "${it}명" } ?: "인원 선택 필요"} · 웨이팅 데모 · 순정 내비 안내", style = Type.Label)
                     startError?.let { Text(it, style = Type.Caption, color = Palette.Red) }
                     BigButton(if (starting) "내비 연결 중…" else "방문 시작", {
-                        starting = true
                         val stops = picked.mapNotNull { id -> stores.find { it.id == id } }
                         graph.scope.launch {
                             val result = graph.startJourney(party ?: 1, stops)
-                            starting = false
                             if (result.isFailure && graph.startError.value == null) graph.startError.value = result.exceptionOrNull()?.message
                         }
                     }, Modifier.fillMaxWidth(), enabled = party != null && picked.isNotEmpty() && !starting)

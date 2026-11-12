@@ -148,7 +148,17 @@ class AppGraph(private val context: Context) {
         consented.value && engine.respondByVoice(promptId, decision == VoiceDecision.APPROVE)
 
     /** 내비에 경로를 넣고 엔진을 켠다. 실제 신호 모드에서 내비 입력이 실패하면 시작하지 않는다. */
+    /**
+     * 한 번에 하나만 시작한다. 화면 버튼은 탭 전환 등으로 다시 켜질 수 있으므로 여기서 막는다.
+     * 모두 Main 스레드에서 불리므로 확인과 설정 사이에 다른 호출이 끼어들지 않는다.
+     */
     suspend fun startJourney(partySize: Int, stops: List<Store>): Result<Unit> {
+        if (preparingJourney.value) return Result.failure(IllegalStateException("이미 방문을 시작하고 있어요"))
+        preparingJourney.value = true
+        return try { startJourneyOnce(partySize, stops) } finally { preparingJourney.value = false }
+    }
+
+    private suspend fun startJourneyOnce(partySize: Int, stops: List<Store>): Result<Unit> {
         if (!consented.value) return Result.failure(IllegalStateException("동의가 필요해요"))
         runCatching { engine.validateStart(partySize, stops) }.exceptionOrNull()?.let { return Result.failure(it) }
         // 경로를 넣으면 내비가 앞으로 나오고 앱은 뒤로 간다. 그 전에 포그라운드 서비스를 띄워 둔다.
@@ -156,8 +166,7 @@ class AppGraph(private val context: Context) {
             startError.value = "앱 화면을 연 상태에서 방문을 시작해 주세요"
             return Result.failure(IllegalStateException("포그라운드 서비스를 시작할 수 없어요"))
         }
-        preparingJourney.value = true
-        val route = try { signals.setRoute(stops) } finally { preparingJourney.value = false }
+        val route = signals.setRoute(stops)
         if (route.isFailure && !demo.enabled.value) {
             JourneyService.stop(context)
             startError.value = "내비에 경로를 넣지 못했어요 (${route.exceptionOrNull()?.message})"
