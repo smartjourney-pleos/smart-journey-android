@@ -87,6 +87,8 @@ class PromptCard(
                 setTextColor(if (approve) onPrimary else ink)
                 background = shape(if (approve) primary else surface, !approve)
                 minHeight = dp(72); isEnabled = allowed
+                // 다른 창이 버튼을 가린 채 눌린 터치로 접수·보류가 실행되지 않게 한다.
+                filterTouchesWhenObscured = true
                 alpha = if (allowed) 1f else 0.55f
                 setOnClickListener {
                     if (!popupTouchAllowed(demo, restricted)) return@setOnClickListener
