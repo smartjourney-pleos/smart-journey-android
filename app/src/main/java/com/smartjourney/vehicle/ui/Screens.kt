@@ -20,6 +20,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
@@ -59,6 +60,7 @@ import com.smartjourney.vehicle.engine.Prompt
 import com.smartjourney.vehicle.engine.StopPhase
 import com.smartjourney.vehicle.engine.StopState
 import com.smartjourney.vehicle.engine.SubmissionStatus
+import com.smartjourney.vehicle.engine.needsEndConfirm
 import com.smartjourney.vehicle.engine.partialArrival
 import com.smartjourney.vehicle.engine.partialLine
 import com.smartjourney.vehicle.engine.statusLine
@@ -157,6 +159,13 @@ private fun TopBar(restricted: Boolean, showDemo: Boolean, onToggleDemo: () -> U
                 }
                 Badge("시연용 데이터 · 실제 매장 미접수", Palette.Orange)
                 if (restricted) Badge("주행 중 조작 제한", Palette.Orange)
+                if (!restricted && !android.provider.Settings.canDrawOverlays(LocalContext.current)) {
+                    val context = LocalContext.current
+                    SmallButton("다른 앱 위 팝업 허용", { runCatching { context.startActivity(android.content.Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        android.net.Uri.parse("package:${context.packageName}"))) }.onFailure {
+                            android.widget.Toast.makeText(context, "이 기기는 팝업 권한 설정을 제공하지 않아요. 지도 위 카드는 뜨지 않고 음성으로 안내해요.", android.widget.Toast.LENGTH_LONG).show()
+                        } })
+                }
                 if (BuildConfig.DEBUG) SmallButton(if (showDemo) "데모 닫기" else "데모", onToggleDemo)
             }
             HorizontalDivider(color = Palette.Line)
@@ -299,9 +308,31 @@ private fun HomeScreen(graph: AppGraph, journey: JourneyState, onShowStatus: () 
     }
 }
 
+/**
+ * "방문 끝내기". 순정 내비의 안내 종료는 SDK가 미리 알려 주지 않아 가로챌 수 없지만, 우리 앱의 종료 버튼은 항상 확인을 거친다.
+ * 방문 추적만 끝내며 접수는 취소하지 않고 내비 경로도 건드리지 않는다.
+ */
+@Composable
+private fun endVisitAction(graph: AppGraph, journey: JourneyState): () -> Unit {
+    var confirm by remember { mutableStateOf(false) }
+    val stop = journey.current
+    if (confirm && stop.needsEndConfirm()) AlertDialog(
+        onDismissRequest = { confirm = false },
+        title = { Text("방문 안내를 종료할까요?", style = Type.Title) },
+        text = {
+            Text(if (stop?.submission == SubmissionStatus.CONFIRMED) "이미 웨이팅을 접수했어요. 방문 안내를 종료해도 접수는 유지돼요."
+                else "웨이팅 접수 결과를 아직 확인하지 못했어요. 방문 안내를 종료해도 접수는 취소되지 않아요.", style = Type.Body)
+        },
+        confirmButton = { TextButton({ confirm = false; graph.engine.end() }) { Text("안내 종료", style = Type.Body) } },
+        dismissButton = { TextButton({ confirm = false }) { Text("계속 안내", style = Type.Body) } },
+    )
+    return { if (stop.needsEndConfirm()) confirm = true else graph.engine.end() }
+}
+
 @Composable
 private fun CurrentVisitCard(graph: AppGraph, journey: JourneyState, onShowStatus: () -> Unit) {
     val stop = journey.current ?: return
+    val endVisit = endVisitAction(graph, journey)
     Panel {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             Text("진행 중 · ${stop.store.name}", Modifier.weight(1f), style = Type.Title)
@@ -311,10 +342,10 @@ private fun CurrentVisitCard(graph: AppGraph, journey: JourneyState, onShowStatu
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             if (maxWidth < 600.dp) Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 BigButton("방문 현황 보기", onShowStatus, Modifier.fillMaxWidth())
-                BigButton("방문 끝내기", graph.engine::end, Modifier.fillMaxWidth(), primary = false)
+                BigButton("방문 끝내기", endVisit, Modifier.fillMaxWidth(), primary = false)
             } else Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 BigButton("방문 현황 보기", onShowStatus, Modifier.weight(1f))
-                BigButton("방문 끝내기", graph.engine::end, Modifier.weight(1f), primary = false)
+                BigButton("방문 끝내기", endVisit, Modifier.weight(1f), primary = false)
             }
         }
         Text("방문을 끝내도 이미 접수한 웨이팅은 취소되지 않아요", style = Type.Caption)
@@ -415,7 +446,7 @@ private fun StatusScreen(graph: AppGraph, journey: JourneyState) {
     }
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         SmallButton(if (expanded) "기록 닫기" else "방문·기록 보기", { expanded = !expanded }, Modifier.weight(1f))
-        if (journey.active) SmallButton("방문 끝내기", graph.engine::end, Modifier.weight(1f))
+        if (journey.active) SmallButton("방문 끝내기", endVisitAction(graph, journey), Modifier.weight(1f))
     }
     if (expanded) Column(Modifier.heightIn(max = 240.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("방문을 끝내도 접수는 취소되지 않아요.", style = Type.Caption)

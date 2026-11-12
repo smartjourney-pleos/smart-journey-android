@@ -32,8 +32,14 @@ interface NaviGateway {
     val trip: Flow<NaviTrip>
     val arrivals: Flow<ArrivalEvent>
 
-    /** 운전자가 내비에서 경로를 취소했거나 목적지를 바꿨다 (`onRouteCancelled`, `onDestinationChanged`). */
+    /** 운전자가 내비에서 목적지를 바꾸거나 없앴다 (`onDestinationChanged`). 도착 때도 올 수 있다. */
     val routeChanged: Flow<Unit>
+
+    /**
+     * 내비의 현재 경로가 이미 취소됐다 (`onRouteCancelled`). 순정 내비의 "안내 종료"를 미리 알려 주는 SDK 이벤트는 없어,
+     * 종료된 뒤에만 온다. 우리가 경로를 요청하는 중이거나 직후에 오는 이벤트는 걸러서 내보낸다.
+     */
+    val routeCancelled: Flow<Unit>
 
     /** [dest]까지의 trip 정보를 요청하고 그 결과를 돌려준다([trip]으로도 온다). 응답이 없으면 null. */
     suspend fun requestTrip(dest: Place): NaviTrip?

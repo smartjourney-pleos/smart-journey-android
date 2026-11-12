@@ -2,7 +2,7 @@
   "packageName": "com.smartjourney.vehicle",
   "appDescription": "Smart Journey tracks navigation destinations and manages restaurant waiting requests after explicit user approval.",
   "invokeWord": "스마트 저니",
-  "version": "0.2.6",
+  "version": "0.2.8",
   "actionCalls": [
     {
       "type": "function",
@@ -22,7 +22,7 @@
       "function": {
         "component": "service",
         "name": "RESPOND_SMART_JOURNEY_PROMPT",
-        "description": "Apply the user's explicit approval or deferral to the question Smart Journey just asked through Gleo.",
+        "description": "Respond to a NEW explicit user answer to the current Smart Journey question. First obtain questionToken from GET_SMART_JOURNEY_STATUS. Never invent a token or reuse an earlier answer.",
         "parameters": {
           "type": "object",
           "properties": {
@@ -33,10 +33,15 @@
                 "defer"
               ],
               "description": "approve when the user clearly says yes (for example 응, 네, 걸어 줘), defer when the user says no or later (for example 아니, 나중에)."
+            },
+            "questionToken": {
+              "type": "string",
+              "description": "Copy data.questionToken EXACTLY from the latest asking response. It is a single-use value for that question, not a user-supplied or invented question ID. If absent or unknown, get the current question again; do not approve."
             }
           },
           "required": [
-            "decision"
+            "decision",
+            "questionToken"
           ]
         }
       }

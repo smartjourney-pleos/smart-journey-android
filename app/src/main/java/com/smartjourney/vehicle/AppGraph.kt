@@ -19,12 +19,16 @@ import com.smartjourney.vehicle.data.ServerBackend
 import com.smartjourney.vehicle.data.SwitchingBackend
 import com.smartjourney.vehicle.data.PreferencesJourneyStorage
 import com.smartjourney.vehicle.demo.DemoController
+import com.smartjourney.vehicle.ui.PopupViewport
 import com.smartjourney.vehicle.domain.Store
 import com.smartjourney.vehicle.engine.Arrival
 import com.smartjourney.vehicle.engine.DEFAULT_WAIT_LIMIT_MIN
 import com.smartjourney.vehicle.engine.JourneyEngine
 import com.smartjourney.vehicle.engine.JourneySignals
 import com.smartjourney.vehicle.service.JourneyService
+import com.smartjourney.vehicle.voice.GleoActionHandler
+import com.smartjourney.vehicle.voice.LateVoiceResult
+import kotlinx.coroutines.channels.Channel
 import com.smartjourney.vehicle.voice.VoiceDecision
 import com.smartjourney.vehicle.voice.VoiceIssue
 import kotlinx.coroutines.CoroutineScope
@@ -125,8 +129,18 @@ class AppGraph(private val context: Context) {
     /** Gleo가 현재 질문을 맡으면 앱의 STT가 Gleo의 마이크를 가로채지 않는다. */
     val gleoPromptId = MutableStateFlow<String?>(null)
 
-    /** 앱 음성으로 끝까지 읽어 준 마지막 질문. Gleo 승인은 앱 음성이나 Gleo가 읽어 준 질문에만 적용한다. */
+    /** 앱 TTS 완료 기록. Gleo 승인 인증으로 사용하지 않는다. */
     val spokenPromptId = MutableStateFlow<String?>(null)
+    val popupViewport = MutableStateFlow<PopupViewport?>(null)
+    val appVisible = MutableStateFlow(false)
+
+    val gleoQuietUntil = MutableStateFlow(0L)
+    val lateVoiceResults = Channel<LateVoiceResult>(Channel.BUFFERED)
+    val gleoActions by lazy {
+        GleoActionHandler(engine.state, { consented.value }, { backend.isDemo }, ::respondByVoice,
+            { gleoPromptId.value = it }, scope, { lateVoiceResults.trySend(it) })
+    }
+
 
     init {
         if (consented.value) {
@@ -142,6 +156,8 @@ class AppGraph(private val context: Context) {
         prefs.edit().putString("consent_version", if (agreed) CONSENT_VERSION else null).apply()
         consented.value = agreed
         if (!agreed) {
+            gleoActions.invalidate()
+            spokenPromptId.value = null
             engine.end()
             storage.clear()
         }
@@ -149,6 +165,11 @@ class AppGraph(private val context: Context) {
 
     fun respondByVoice(promptId: String, decision: VoiceDecision): Boolean =
         consented.value && engine.respondByVoice(promptId, decision == VoiceDecision.APPROVE)
+
+    fun respondFromPopup(promptId: String, approved: Boolean, demoSignal: Boolean, restricted: Boolean): Boolean =
+        consented.value && android.provider.Settings.canDrawOverlays(context) &&
+            com.smartjourney.vehicle.ui.popupTouchAllowed(demoSignal && demo.enabled.value, restricted) &&
+            engine.respondByTouch(promptId, approved)
 
     /** 내비에 경로를 넣고 엔진을 켠다. 실제 신호 모드에서 내비 입력이 실패하면 시작하지 않는다. */
     /**
@@ -271,6 +292,7 @@ class AppSignals(
     )
 
     override val routeChanged: Flow<Unit> = navi.routeChanged
+    override val routeCancelled: Flow<Unit> = navi.routeCancelled
 
     /** 남은 시간을 어디서 받았는지. 화면의 실제 SDK/데모 입력 배지에 쓴다. */
     val etaSource = MutableStateFlow<EtaSource?>(null)

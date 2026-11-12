@@ -48,6 +48,7 @@ object JourneyStateJsonCodec {
                         })
                         put("phase", stop.phase.name)
                         put("submission", stop.submission.name)
+                        stop.submissionId?.let { put("submissionId", it) }
                         stop.waiting?.let { w ->
                             put("waiting", JSONObject().apply {
                                 put("waitingId", w.waitingId)
@@ -115,7 +116,8 @@ object JourneyStateJsonCodec {
                 val submission = runCatching { SubmissionStatus.valueOf(stopObj.getString("submission")) }
                     .getOrDefault(if (waiting != null) SubmissionStatus.CONFIRMED else SubmissionStatus.NOT_REQUESTED)
                     .let { if (it == SubmissionStatus.REQUESTING) SubmissionStatus.UNKNOWN else it }
-                StopState(store, phase, waiting, arrival, alighted, submission)
+                StopState(store, phase, waiting, arrival, alighted, submission,
+                    stopObj.optString("submissionId").takeIf { it.isNotBlank() })
             }
             val logsArray = json.optJSONArray("log")
             val logs = if (logsArray != null) {

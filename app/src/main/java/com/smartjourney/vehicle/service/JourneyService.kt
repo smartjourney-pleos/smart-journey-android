@@ -7,6 +7,8 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
+import com.smartjourney.vehicle.ui.createPromptPopup
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
@@ -20,6 +22,7 @@ import com.smartjourney.vehicle.engine.statusLine
 import com.smartjourney.vehicle.engine.text
 import com.smartjourney.vehicle.graph
 import com.smartjourney.vehicle.voice.PleosVoiceGateway
+import com.smartjourney.vehicle.voice.LateVoiceResultController
 import com.smartjourney.vehicle.voice.VoiceIssue
 import com.smartjourney.vehicle.voice.VoicePromptController
 import kotlinx.coroutines.CoroutineScope
@@ -33,6 +36,8 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * 앱의 본체. 내비 뒤에서 엔진을 살려 두고 상태 알림 한 줄(N-01)을 유지한다 (명세서 2.1).
@@ -44,6 +49,8 @@ class JourneyService : Service() {
     private val scope = CoroutineScope(serviceJob + Dispatchers.Main.immediate)
     private val voiceDelegate = lazy { PleosVoiceGateway(this) }
     private val voice by voiceDelegate
+    private val speechMutex = Mutex()
+    private val popup by lazy { createPromptPopup(this) }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -68,14 +75,20 @@ class JourneyService : Service() {
                 }
             }
         }
+        scope.launch {
+            combine(engine.state, graph.demo.enabled, graph.signals.restricted, graph.popupViewport, graph.appVisible) { s, demo, restricted, bounds, visible ->
+                popup.render(s.prompt.takeIf { s.active && graph.consented.value && !visible }, demo, restricted, bounds)
+            }.collect { }
+        }
         val prompts = engine.state.map { it.prompt }.distinctUntilChanged { a, b -> a?.id == b?.id }
         scope.launch {
             prompts.collect { prompt ->
                 if (prompt == null) Notices.cancelPrompt(this@JourneyService)
-                else Notices.showPrompt(this@JourneyService, prompt)
+                else Notices.showPrompt(this@JourneyService, prompt,
+                    visualFallback = !android.provider.Settings.canDrawOverlays(this@JourneyService) || graph.popupViewport.value == null)
             }
         }
-        // 주행 중 결정은 음성으로만 한다 (명세서 v4 5장). 승인 화면·헤드업·오버레이를 띄우지 않는다.
+        // 주행 규제 중 터치 승인은 막고 음성 응답을 유지한다. 팝업은 별도 권한을 허용한 경우에만 표시한다.
         scope.launch {
             val controller = VoicePromptController(voice, { engine.state.value.prompt }, graph::respondByVoice,
                 onSpoken = { graph.spokenPromptId.value = it },
@@ -85,7 +98,7 @@ class JourneyService : Service() {
                 })
             combine(prompts, graph.gleoPromptId) { prompt, gleoId -> prompt?.takeUnless { it.id == gleoId } }
                 .distinctUntilChanged { a, b -> a?.id == b?.id }
-                .collectLatest { prompt -> if (prompt != null) controller.handle(prompt) }
+                .collectLatest { prompt -> if (prompt != null) speechMutex.withLock { controller.handle(prompt) } }
         }
         scope.launch {
             // 여정이 복원되지 않았거나 시작되지 않은 상태에서 서비스만 부활한 경우 안전하게 자동 종료
@@ -96,6 +109,13 @@ class JourneyService : Service() {
             }
         }
         scope.launch { engine.notices.collect { Notices.result(this@JourneyService, it) } }
+        scope.launch {
+            val announcer = LateVoiceResultController(voice, engine.state, graph.gleoQuietUntil, speechMutex,
+                graph.gleoActions::shouldAnnounce, graph.gleoActions::markAnnounced,
+                latestText = graph.gleoActions::lateResultText)
+            for (result in graph.lateVoiceResults) announcer.announce(result)
+        }
+
     }
 
     /**
@@ -103,7 +123,10 @@ class JourneyService : Service() {
      */
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
 
+    override fun onConfigurationChanged(newConfig: Configuration) { super.onConfigurationChanged(newConfig); popup.refresh() }
+
     override fun onDestroy() {
+        popup.close()
         scope.cancel()
         // 듣기/읽기의 finally가 리스너를 제거한 뒤 SDK 연결을 해제한다.
         CoroutineScope(Dispatchers.Main.immediate).launch {
@@ -129,7 +152,8 @@ object Notices {
     private const val ID_PROMPT = 2
     private const val ID_RESULT = 3
     private const val CH_STATUS = "status"
-    // 기존 HIGH 채널은 재생성해도 중요도가 내려가지 않아 새 ID를 쓴다. 지도 위 헤드업을 띄우지 않는다.
+    // 표시 권한이 없는 기기의 시각 안내는 OS가 관리하는 알림으로 제공한다.
+    private const val CH_VISUAL_PROMPT = "waiting_visual_prompt_v1"
     private const val CH_PROMPT = "voice_prompt_v1"
     private const val CH_RESULT = "voice_result_v1"
     private val OLD_CHANNELS = listOf("prompt", "result")
@@ -141,6 +165,7 @@ object Notices {
             listOf(
                 NotificationChannel(CH_STATUS, "여정 상태", NotificationManager.IMPORTANCE_LOW),
                 NotificationChannel(CH_PROMPT, "음성 응답 요청", NotificationManager.IMPORTANCE_LOW),
+                NotificationChannel(CH_VISUAL_PROMPT, "웨이팅 질문 표시", NotificationManager.IMPORTANCE_HIGH),
                 NotificationChannel(CH_RESULT, "결과 알림", NotificationManager.IMPORTANCE_LOW),
             ),
         )
@@ -157,10 +182,16 @@ object Notices {
             )
             .build()
 
-    /** 시스템 알림 영역에만 남긴다. 전체 화면·헤드업·터치 승인으로 지도를 덮지 않는다. */
-    fun showPrompt(context: Context, prompt: Prompt) {
+    /** 표시 권한이 없으면 표준 시스템 알림으로 대체한다. 배너 여부는 차량 OS가 결정한다. */
+    fun showPrompt(context: Context, prompt: Prompt, visualFallback: Boolean) {
         val text = prompt.text()
-        val notification = builder(context, CH_PROMPT, text.title, "${text.detail} · 음성으로 답해 주세요")
+        val notification = builder(context, if (visualFallback) CH_VISUAL_PROMPT else CH_PROMPT, text.title, "${text.detail} · 음성으로 답해 주세요")
+            .setPriority(if (visualFallback) NotificationCompat.PRIORITY_HIGH else NotificationCompat.PRIORITY_LOW)
+            .setCategory(NotificationCompat.CATEGORY_REMINDER)
+            .setSilent(!visualFallback)
+            .setOnlyAlertOnce(true)
+            .setContentIntent(PendingIntent.getActivity(context, 0, Intent(context, MainActivity::class.java), IMMUTABLE))
+            .setTimeoutAfter((prompt.expiresAt?.minus(System.currentTimeMillis()) ?: 60_000L).coerceAtLeast(1))
             .setOngoing(true)
             .build()
         context.getSystemService(NotificationManager::class.java).notify(ID_PROMPT, notification)

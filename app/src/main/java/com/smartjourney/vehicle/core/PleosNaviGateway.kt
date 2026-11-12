@@ -15,6 +15,7 @@ import ai.pleos.playground.navi.data.WaypointArrivedInfo
 import ai.pleos.playground.navi.helper.NaviHelper
 import ai.pleos.playground.navi.helper.listener.NaviHelperEventListener
 import android.content.Context
+import android.os.SystemClock
 import android.util.Log
 import com.smartjourney.vehicle.BuildConfig
 import kotlinx.coroutines.CancellationException
@@ -36,6 +37,8 @@ private const val TRIP_TIMEOUT_MS = 5_000L
 // onRouteStarted는 "탐색 시작" 이벤트다(API Reference). 그 뒤 이 시간 안에 onError가 없으면 성공으로 본다.
 // 에뮬레이터 2.1.0은 onRoutingCompleted를 보내지 않아 이 확인이 필요하다.
 private const val ROUTE_STARTED_GRACE_MS = 2_000L
+// 경로 요청이 끝난 뒤 이전 경로의 취소 이벤트가 늦게 올 수 있는 시간
+private const val ROUTE_SETTLE_MS = 3_000L
 
 class PleosNaviGateway(context: Context) : NaviGateway {
 
@@ -54,10 +57,16 @@ class PleosNaviGateway(context: Context) : NaviGateway {
     )
     private val arrivalFlow = MutableSharedFlow<ArrivalEvent>(extraBufferCapacity = 8)
     private val routeChangedFlow = MutableSharedFlow<Unit>(extraBufferCapacity = 4)
+    private val routeCancelledFlow = MutableSharedFlow<Unit>(extraBufferCapacity = 4)
+    // 우리 경로 요청이 끝난 시각. 이전 경로를 바꾸며 늦게 오는 취소 이벤트를 운전자의 조작으로 오인하지 않는다.
+    @Volatile private var routeSettledAt = -ROUTE_SETTLE_MS
 
     override val trip: Flow<NaviTrip> = tripFlow
     override val arrivals: Flow<ArrivalEvent> = arrivalFlow
     override val routeChanged: Flow<Unit> = routeChangedFlow
+    override val routeCancelled: Flow<Unit> = routeCancelledFlow
+
+    private fun ownRouteRequest() = pendingRoute != null || SystemClock.elapsedRealtime() - routeSettledAt < ROUTE_SETTLE_MS
 
     private val listener = object : NaviHelperEventListener {
         override fun onTripInfo(info: TripInfo) {
@@ -83,13 +92,17 @@ class PleosNaviGateway(context: Context) : NaviGateway {
             pendingStarted?.complete(Unit)
         }
 
-        // 우리가 경로를 요청하는 중이 아닐 때만 운전자의 조작으로 본다
+        // 우리가 경로를 요청하는 중이 아닐 때만 운전자의 조작으로 본다. 취소와 목적지 변경은 따로 전달한다.
         override fun onRouteCancelled() {
-            if (pendingRoute == null) routeChangedFlow.tryEmit(Unit)
+            val own = ownRouteRequest()
+            if (BuildConfig.DEBUG) Log.i("SJ-NAVI", "onRouteCancelled own=$own")
+            if (!own) routeCancelledFlow.tryEmit(Unit)
         }
 
         override fun onDestinationChanged() {
-            if (pendingRoute == null) routeChangedFlow.tryEmit(Unit)
+            val own = ownRouteRequest()
+            if (BuildConfig.DEBUG) Log.i("SJ-NAVI", "onDestinationChanged own=$own")
+            if (!own) routeChangedFlow.tryEmit(Unit)
         }
 
         override fun onError(errorCode: NaviErrorCode) {
@@ -168,6 +181,7 @@ class PleosNaviGateway(context: Context) : NaviGateway {
                 }
             } ?: Result.failure(NaviException("경로 탐색 응답 없음"))
         } finally {
+            routeSettledAt = SystemClock.elapsedRealtime()
             pendingRoute = null
             pendingStarted = null
         }

@@ -91,11 +91,14 @@ class JourneyEngineTest {
     }
 
     @Test
-    fun 승인_없이는_접수하지_않고_60초_뒤_카드를_닫는다() = runTest {
+    fun 승인_없이는_접수하지_않고_10초_뒤_카드를_닫는다() = runTest {
         val engine = startedEngine()
         signals.remaining.value = 20 * 60
         runCurrent()
-        advanceTimeBy(61_000)
+        advanceTimeBy(9_999)
+        runCurrent()
+        assertTrue(engine.state.value.prompt != null)
+        advanceTimeBy(1)
         runCurrent()
 
         assertEquals(StopPhase.PLANNED, engine.state.value.current?.phase)

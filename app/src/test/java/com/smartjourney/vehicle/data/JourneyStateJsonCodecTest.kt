@@ -17,7 +17,7 @@ class JourneyStateJsonCodecTest {
     fun json_직렬화_역직렬화가_일치한다() {
         val store = Store(1L, "42dot", "경기 성남시 판교역로", 37.4, 127.1, "POI-1", "SUB-1")
         val waiting = Waiting("w-1", 1L, 10, 4, WaitingStatus.REGISTERED, 2, 10)
-        val stop = StopState(store, StopPhase.REGISTERED, waiting)
+        val stop = StopState(store, StopPhase.REGISTERED, waiting, submissionId = "request-1")
         val state = JourneyState(active = true, partySize = 4, stops = listOf(stop), index = 0, log = listOf("시작"))
 
         val json = JourneyStateJsonCodec.toJson(state, 1000L)
@@ -30,6 +30,7 @@ class JourneyStateJsonCodecTest {
         assertEquals("42dot", restored?.stops?.get(0)?.store?.name)
         assertEquals(StopPhase.REGISTERED, restored?.stops?.get(0)?.phase)
         assertEquals("w-1", restored?.stops?.get(0)?.waiting?.waitingId)
+        assertEquals("request-1", restored?.stops?.get(0)?.submissionId)
     }
 
     @Test

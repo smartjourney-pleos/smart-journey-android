@@ -50,7 +50,7 @@ class VoicePromptController(
     private val respond: (String, VoiceDecision) -> Boolean,
     private val onUnavailable: (VoiceIssue) -> Unit,
     private val now: () -> Long = System::currentTimeMillis,
-    /** 질문을 끝까지 읽었다. Gleo로 오는 승인은 사용자가 실제로 들은 질문에만 적용한다. */
+    /** 앱 TTS가 질문을 끝까지 읽은 관측. 외부 Gleo 응답의 인증으로 사용하지 않는다. */
     private val onSpoken: (String) -> Unit = {},
 ) {
     private fun isCurrent(prompt: Prompt) = currentPrompt()?.id == prompt.id &&

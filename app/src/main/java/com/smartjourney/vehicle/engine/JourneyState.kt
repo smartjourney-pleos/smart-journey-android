@@ -7,6 +7,7 @@ import com.smartjourney.vehicle.domain.QueueStatus
 import com.smartjourney.vehicle.domain.Store
 import com.smartjourney.vehicle.domain.Waiting
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 
 /** 엔진이 읽는 차량·내비 신호. 실제 SDK와 데모 신호를 같은 모양으로 받는다. */
 interface JourneySignals {
@@ -16,8 +17,11 @@ interface JourneySignals {
     /** 도착한 매장. 내비는 경유지 도착을 "보낼 수 있다"고만 보장하므로 현재 매장과 맞는지 엔진이 확인한다. */
     val arrivals: Flow<Arrival>
 
-    /** 운전자가 내비에서 경로를 취소했거나 목적지를 바꿨다. */
+    /** 운전자가 내비에서 목적지를 바꾸거나 없앴다. */
     val routeChanged: Flow<Unit>
+
+    /** 내비의 현재 경로가 이미 취소됐다. 취소 전에 알려 주는 이벤트는 아니다. */
+    val routeCancelled: Flow<Unit> get() = emptyFlow()
 
     /** [target]까지 남은 시간(초). 구독하는 동안 추적한다. */
     fun remainingSec(target: Store): Flow<Int>
@@ -47,6 +51,8 @@ data class StopState(
     val arrival: ArrivalResult? = null,
     val alighted: Int? = null,
     val submission: SubmissionStatus = SubmissionStatus.NOT_REQUESTED,
+    /** 접수와 늦은 결과를 같은 승인 질문에 연결한다. */
+    val submissionId: String? = null,
 )
 
 /** 운전자에게 묻는 한 장의 카드. 같은 [id]는 같은 질문이다(접수 멱등키로도 쓴다). */
@@ -86,6 +92,10 @@ data class JourneyState(
 }
 
 const val DEFAULT_WAIT_LIMIT_MIN = 30
+
+/** 접수했거나 접수 결과를 모르는 방문을 끝내기 전에는 확인을 받는다. 접수 전·거절된 방문은 바로 끝낸다. */
+fun StopState?.needsEndConfirm(): Boolean = this != null &&
+    (submission == SubmissionStatus.CONFIRMED || submission == SubmissionStatus.REQUESTING || submission == SubmissionStatus.UNKNOWN)
 
 /** 일부만 하차한 상태. 도착 완료나 입장 가능으로 안내하지 않는다. */
 val StopState.partialArrival: Boolean get() = arrival == ArrivalResult.PARTIAL

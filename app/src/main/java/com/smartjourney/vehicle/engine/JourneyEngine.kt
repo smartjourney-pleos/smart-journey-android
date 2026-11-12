@@ -32,7 +32,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.UUID
 
-private const val PROMPT_TIMEOUT_MS = 60_000L
+const val WAITING_PROMPT_TIMEOUT_MS = 10_000L
 private const val INPUT_STALE_MS = 60_000L
 private const val ETA_PERIOD_MS = 60_000L
 
@@ -145,12 +145,20 @@ class JourneyEngine(
         return true
     }
 
+    /** 팝업은 화면 생성 시의 ID로만 답한다. 오래된/중복/만료 터치는 실행하지 않는다. */
+    fun respondByTouch(promptId: String, approved: Boolean): Boolean {
+        val prompt = _state.value.prompt ?: return false
+        if (!_state.value.active || prompt.id != promptId || (prompt.expiresAt != null && now() >= prompt.expiresAt)) return false
+        if (approved) approve(ApprovalMethod.TOUCH, promptId) else defer(promptId)
+        return true
+    }
+
     /** 정차 중 홈에서 바꾼 대기 허용 시간. 이미 나간 질문은 바꾸지 않는다. */
     fun setWaitLimit(minutes: Int) {
         if (_state.value.active) _state.update { it.copy(waitLimitMin = minutes) }
     }
 
-    /** 보류, 60초 무응답 */
+    /** 보류, 웨이팅 질문의 10초 무응답 */
     fun defer(promptId: String? = null) {
         val prompt = _state.value.prompt ?: return
         if (promptId != null && prompt.id != promptId) return
@@ -220,11 +228,12 @@ class JourneyEngine(
         launchInStop {
             signals.routeChanged.collect {
                 if (!arrived) {
-                    log("내비 경로가 바뀌거나 취소됨")
+                    log("내비 목적지가 바뀌거나 없어짐")
                     notice("내비 경로가 바뀌었어요. 웨이팅 시간 계산이 맞지 않을 수 있어요")
                 }
             }
         }
+        launchInStop { signals.routeCancelled.collect { onRouteCancelled() } }
         launchInStop {
             combine(signals.restricted, signals.anyDoorOpen, signals.occupied) { r, d, o -> Triple(r, d, o) }
                 .collect { latest ->
@@ -282,12 +291,12 @@ class JourneyEngine(
             Prompt(
                 id = newPromptId(), kind = Prompt.Kind.GOLDEN_TIME, storeName = stop.store.name,
                 partySize = _state.value.partySize, waitMin = queue.estimatedWaitMin, remainingMin = remainingMin,
-                expiresAt = now() + PROMPT_TIMEOUT_MS,
+                expiresAt = now() + WAITING_PROMPT_TIMEOUT_MS,
                 waitLimitMin = _state.value.waitLimitMin.takeIf { queue.estimatedWaitMin > it },
             ),
         )
         promptTimeout = launchInStop {
-            delay(PROMPT_TIMEOUT_MS)
+            delay(WAITING_PROMPT_TIMEOUT_MS)
             defer()
         }
     }
@@ -297,7 +306,7 @@ class JourneyEngine(
         if (stop.submission != SubmissionStatus.NOT_REQUESTED) return
         val partySize = _state.value.partySize
         _state.update { it.copy(prompt = null) }
-        updateStop { it.copy(submission = SubmissionStatus.REQUESTING) }
+        updateStop { it.copy(submission = SubmissionStatus.REQUESTING, submissionId = prompt.id) }
         launchInStop {
             try {
                 val waiting = backend.register(stop.store.id, partySize, method, idempotencyKey = prompt.id)
@@ -361,6 +370,28 @@ class JourneyEngine(
                 next()
             }
             else -> Unit
+        }
+    }
+
+    /**
+     * 내비 안내는 이미 끝났다. 접수한 적 없는 방문만 닫고, 접수·접수 중·결과 미상은 그대로 둔다.
+     * 매장 웨이팅은 사용자 승인 없이 취소하지 않는다.
+     */
+    private fun onRouteCancelled() {
+        val stop = _state.value.current ?: return
+        log("내비 취소 이벤트 · 접수 ${stop.submission} · 단계 ${stop.phase} · 도착 $arrived")
+        if (arrived) return
+        if (stop.submission == SubmissionStatus.NOT_REQUESTED && (stop.phase == StopPhase.PLANNED || stop.phase == StopPhase.PROMPTED)) {
+            log("내비 안내 종료 · 접수 전이라 방문 계획을 닫음")
+            notice("내비 안내가 끝나 접수 전 방문 계획을 닫았어요")
+            finish()
+        } else {
+            log("내비 안내 종료 · 접수 상태 ${stop.submission}는 그대로 둠")
+            notice(when (stop.submission) {
+                SubmissionStatus.CONFIRMED -> "내비 안내가 끝났어요. 이미 접수한 웨이팅은 유지돼요"
+                SubmissionStatus.REQUESTING, SubmissionStatus.UNKNOWN -> "내비 안내가 끝났어요. 웨이팅 접수 결과는 아직 확인하지 못했어요"
+                else -> "내비 안내가 끝났어요"
+            })
         }
     }
 

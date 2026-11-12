@@ -27,6 +27,43 @@ class SubmissionSafetyTest {
         override suspend fun readNow() = VehicleSnapshot(4, null, false)
     }
 
+    @Test fun `popup stale expired and duplicate approval cannot submit`() = runTest {
+        var time = 0L
+        val fake = FakeBackend()
+        var requests = 0
+        var methodUsed: ApprovalMethod? = null
+        val backend = object : WaitingBackend by fake {
+            override suspend fun register(storeId: Long, partySize: Int, method: ApprovalMethod, idempotencyKey: String): Waiting {
+                requests++; methodUsed = method
+                return fake.register(storeId, partySize, method, idempotencyKey)
+            }
+        }
+        val engine = JourneyEngine(Signals(), backend, backgroundScope, now = { time })
+        engine.start(4, fake.stores().take(1)); runCurrent()
+        val prompt = engine.state.value.prompt!!
+        assertFalse(engine.respondByTouch("old-question", true))
+        time = prompt.expiresAt!!
+        assertFalse(engine.respondByTouch(prompt.id, true))
+        time--
+        assertTrue(engine.respondByTouch(prompt.id, true))
+        assertFalse(engine.respondByTouch(prompt.id, true))
+        runCurrent()
+        assertEquals(1, requests)
+        assertEquals(ApprovalMethod.TOUCH, methodUsed)
+    }
+
+    @Test fun `popup defer clears question without registration`() = runTest {
+        val fake = FakeBackend()
+        val engine = JourneyEngine(Signals(), fake, backgroundScope)
+        engine.start(4, fake.stores().take(1)); runCurrent()
+        val id = engine.state.value.prompt!!.id
+        assertTrue(engine.respondByTouch(id, false)); runCurrent()
+        assertNull(engine.state.value.prompt)
+        assertEquals(SubmissionStatus.NOT_REQUESTED, engine.state.value.current!!.submission)
+        assertNull(engine.state.value.current!!.waiting)
+        assertFalse(engine.respondByTouch(id, true))
+    }
+
     @Test fun `unknown result never causes another automatic submission`() = runTest {
         val signals = Signals()
         val fake = FakeBackend()

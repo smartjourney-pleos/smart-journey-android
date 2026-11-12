@@ -13,6 +13,7 @@ class FakeNaviGateway : NaviGateway {
     override val trip: Flow<NaviTrip> = tripFlow
     override val arrivals: Flow<ArrivalEvent> = arrivalFlow
     override val routeChanged: Flow<Unit> = emptyFlow()
+    override val routeCancelled: Flow<Unit> = emptyFlow()
 
     /** 마지막으로 요청받은 경로. 테스트에서 확인용. */
     var lastRoute: Pair<Place, List<Place>>? = null
