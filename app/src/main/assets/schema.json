@@ -1,48 +1,19 @@
 {
   "packageName": "com.smartjourney.vehicle",
-  "appDescription": "Smart Journey tracks navigation destinations and manages restaurant waiting requests after explicit user approval.",
+  "appDescription": "Smart Journey tracks a planned restaurant visit and reports its waiting status; approvals are made in the app, not through Gleo.",
   "invokeWord": "스마트 저니",
-  "version": "0.2.9",
+  "version": "0.2.10",
   "actionCalls": [
     {
       "type": "function",
       "function": {
         "component": "service",
         "name": "GET_SMART_JOURNEY_STATUS",
-        "description": "Get the current journey status and any pending question that needs a voice response.",
+        "description": "Get the current Smart Journey visit status, including whether a question is waiting in the app.",
         "parameters": {
           "type": "object",
           "properties": {},
           "required": []
-        }
-      }
-    },
-    {
-      "type": "function",
-      "function": {
-        "component": "service",
-        "name": "RESPOND_SMART_JOURNEY_PROMPT",
-        "description": "Respond to a NEW explicit user answer to the current Smart Journey question. First obtain questionToken from GET_SMART_JOURNEY_STATUS. Never invent a token or reuse an earlier answer.",
-        "parameters": {
-          "type": "object",
-          "properties": {
-            "decision": {
-              "type": "string",
-              "enum": [
-                "approve",
-                "defer"
-              ],
-              "description": "approve when the user clearly says yes (for example 응, 네, 걸어 줘), defer when the user says no or later (for example 아니, 나중에)."
-            },
-            "questionToken": {
-              "type": "string",
-              "description": "Copy data.questionToken EXACTLY from the latest asking response. It is a single-use value for that question, not a user-supplied or invented question ID. If absent or unknown, get the current question again; do not approve."
-            }
-          },
-          "required": [
-            "decision",
-            "questionToken"
-          ]
         }
       }
     }

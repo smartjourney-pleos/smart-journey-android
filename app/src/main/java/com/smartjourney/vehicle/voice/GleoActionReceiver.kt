@@ -8,8 +8,6 @@ import com.smartjourney.vehicle.BuildConfig
 import com.smartjourney.vehicle.graph
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
-import org.json.JSONObject
-import org.json.JSONTokener
 
 /** Gleo Interface의 service action은 Broadcast. 전송 권한은 Manifest에서 제한한다. */
 class GleoActionReceiver : BroadcastReceiver() {
@@ -22,7 +20,8 @@ class GleoActionReceiver : BroadcastReceiver() {
         graph.gleoQuietUntil.value = System.currentTimeMillis() + GLEO_SPEECH_GRACE_MS
         graph.scope.launch {
             try {
-                val response = graph.gleoActions.handle(action, if (action == RESPOND) parameters(intent) else JSONObject())
+                // 모델이 만든 ACTION_PARAM은 읽지 않는다. 승인을 받지 않으므로 쓸 곳이 없다.
+                val response = graph.gleoActions.handle(action)
                 reply(context, response)
             } catch (e: CancellationException) {
                 throw e
@@ -33,18 +32,6 @@ class GleoActionReceiver : BroadcastReceiver() {
                 graph.gleoQuietUntil.value = System.currentTimeMillis() + GLEO_SPEECH_GRACE_MS
                 pending.finish()
             }
-        }
-    }
-
-    private fun parameters(intent: Intent): JSONObject {
-        val raw = intent.getStringExtra("ACTION_PARAM") ?: return JSONObject().apply {
-            intent.getStringExtra("questionToken")?.let { put("questionToken", it) }
-            intent.getStringExtra("decision")?.let { put("decision", it) }
-        }
-        return when (val value = JSONTokener(raw).nextValue()) {
-            is JSONObject -> value
-            is String -> JSONObject(value)
-            else -> throw IllegalArgumentException("ACTION_PARAM must be a JSON object")
         }
     }
 

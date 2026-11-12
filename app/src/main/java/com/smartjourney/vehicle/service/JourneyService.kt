@@ -96,7 +96,7 @@ class JourneyService : Service() {
                     graph.voiceIssue.value = it
                     Notices.voiceUnavailable(this@JourneyService, it)
                 })
-            combine(prompts, graph.gleoPromptId) { prompt, gleoId -> prompt?.takeUnless { it.id == gleoId } }
+            combine(prompts, graph.voiceProbePromptId) { prompt, probeId -> prompt?.takeUnless { it.id == probeId } }
                 .distinctUntilChanged { a, b -> a?.id == b?.id }
                 .collectLatest { prompt -> if (prompt != null) speechMutex.withLock { controller.handle(prompt) } }
         }

@@ -126,8 +126,8 @@ class AppGraph(private val context: Context) {
     /** 내비 경로 입력 실패 등 방문 시작 오류. */
     val startError = MutableStateFlow<String?>(null)
 
-    /** Gleo가 현재 질문을 맡으면 앱의 STT가 Gleo의 마이크를 가로채지 않는다. */
-    val gleoPromptId = MutableStateFlow<String?>(null)
+    /** 디버그 음성 검증(SpeechProbeActivity)이 질문을 맡으면 서비스 STT가 마이크를 가로채지 않는다. 릴리스에서는 설정하는 곳이 없다. */
+    val voiceProbePromptId = MutableStateFlow<String?>(null)
 
     /** 앱 TTS 완료 기록. Gleo 승인 인증으로 사용하지 않는다. */
     val spokenPromptId = MutableStateFlow<String?>(null)
@@ -135,11 +135,9 @@ class AppGraph(private val context: Context) {
     val appVisible = MutableStateFlow(false)
 
     val gleoQuietUntil = MutableStateFlow(0L)
+    // Gleo 승인 경로를 닫아 지금은 넣는 곳이 없다. 증거가 있는 Gleo 승인 경로가 생기면 결과 안내에 다시 쓴다.
     val lateVoiceResults = Channel<LateVoiceResult>(Channel.BUFFERED)
-    val gleoActions by lazy {
-        GleoActionHandler(engine.state, { consented.value }, { backend.isDemo }, ::respondByVoice,
-            { gleoPromptId.value = it }, scope, { lateVoiceResults.trySend(it) })
-    }
+    val gleoActions by lazy { GleoActionHandler(engine.state, { consented.value }, { backend.isDemo }) }
 
 
     init {
@@ -156,7 +154,6 @@ class AppGraph(private val context: Context) {
         prefs.edit().putString("consent_version", if (agreed) CONSENT_VERSION else null).apply()
         consented.value = agreed
         if (!agreed) {
-            gleoActions.invalidate()
             spokenPromptId.value = null
             engine.end()
             storage.clear()

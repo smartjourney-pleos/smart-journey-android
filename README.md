@@ -11,7 +11,7 @@ Kotlin 2.0, Jetpack Compose, Coroutines/Flow, Pleos Vehicle SDK 2.3.2, Pleos Nav
 - 에뮬레이터/차량의 Vehicle 서비스 **2.3.13 이상**, Navi 서비스 **2.0.1 이상** 필요
 - 정차 중 여정 준비 화면의 **연결 환경**에 SDK 버전과 설치된 서비스 버전을 표시합니다. 최소 요구 버전은 SDK AAR의 메타데이터를 따르며, 서비스가 없거나 낮으면 설치·업데이트 안내가 나옵니다.
 
-## 0.2.9 — 개정 기획(v4) 빌드
+## 0.2.10 — 1차 기획 검증용 프로토타입
 
 정차 중에는 홈에서 방문을 계획하고, 방문 현황에서 결과를 확인합니다. **주행 중에는 내비 화면을 그대로 두고 음성으로 묻고 답하는 것이 기본입니다.** 사용자가 "다른 앱 위에 표시" 권한을 허용한 환경에서만 내비 위에 웨이팅 질문 카드를 함께 띄웁니다.
 
@@ -33,20 +33,20 @@ Kotlin 2.0, Jetpack Compose, Coroutines/Flow, Pleos Vehicle SDK 2.3.2, Pleos Nav
 | 순정 내비 안내 종료 | 접수 전 방문만 닫고, 접수·요청 중·결과 미상인 방문은 유지. 매장 웨이팅은 취소하지 않음. 우리가 경로를 바꾸며 생긴 이전 경로의 취소는 내비의 현재 경로 상태(`RouteStateInfo`)로 가려 무시 | NaviHelper `onRouteCancelled`, `getRouteStateInfo` |
 | 방문 끝내기 | 접수했거나 결과를 모를 때는 확인창("계속 안내"/"안내 종료")을 거침. 방문 추적만 끝내고 접수 기록과 내비 경로는 건드리지 않음 | - |
 | 일부 하차 | 하차 추정 < 방문 인원이면 일부 도착으로 표시하고 도착 완료로 보지 않음 | 좌석·도어 (데모 입력) |
-| Gleo | `assets/schema.json`(version 0.2.9)의 `GET_SMART_JOURNEY_STATUS`, `RESPOND_SMART_JOURNEY_PROMPT` | 에뮬레이터에서 상태 조회 왕복 확인(0.2.5). 사람 마이크로 승인하는 전체 흐름은 미검증 |
+| Gleo | `assets/schema.json`(version 0.2.10)에는 상태 조회 `GET_SMART_JOURNEY_STATUS`만 둠. **Gleo를 통한 접수·인원 변경 승인은 받지 않음**: Gleo Action은 모델이 만든 `ACTION_PARAM`만 전달하고 새 사용자 발화를 증명하는 값이 없음(Gleo Interface 가이드, 설치된 Gleo AI 4.2.0.15 확인). 예전 스키마로 오는 승인 호출에도 아무것도 실행하지 않음 | 0.2.10: 에뮬레이터에서 Gleo가 상태 조회 함수 1개를 등록하는 것만 확인. 상태 조회 자연어 왕복은 이전 빌드(0.2.5)에서 Mac `say` 합성 음성을 호스트 마이크로 넣어 시험한 결과이며 0.2.10에서는 재시험하지 않음. 사람이 말하는 Gleo 대화 전체 흐름은 미검증 |
 
 화면 상단에는 **"시연용 데이터 · 실제 매장 미접수"**를 항상 표시하고, 값마다 **실제 SDK / 데모 입력** 배지를 붙입니다. 서버·매장 POS는 앱 안의 `FakeBackend`이며, 실제 매장에는 접수되지 않습니다.
 
 ### 검증 범위와 남은 제약
 
-- 통합 검증: `./gradlew clean :app:assembleDebug :app:assembleRelease :app:testDebugUnitTest :app:lintDebug` 성공, 단위 테스트 95개 실패 0.
-- 서명된 release 0.2.9로 독립 QA(Codex)를 했습니다.
+- 0.2.10 통합 검증: `./gradlew :app:assembleDebug :app:assembleRelease :app:testDebugUnitTest :app:lintDebug` 성공, 단위 테스트 87개 실패 0(Gleo 토큰 승인 테스트 17개를 승인 차단 회귀 테스트 9개로 교체). 변경 내용은 [0.2.10 기록](docs/verification/release-0.2.10.md)에 있습니다.
+- 아래 독립 QA는 서명된 release 0.2.9 기준입니다. 0.2.10은 Gleo 승인 경로만 닫은 수정이며 독립 QA는 별도로 진행합니다.
   - 강제 권한 없는 일반 설치에서 순정 내비로 안내를 종료하면 접수 전 방문이 정리되는 것을 확인했습니다.
   - 권한을 따로 부여한 QA 환경에서는 지도 카드 등록(시연 1명·11번 확정), 확정 뒤 내비 종료 시 접수 유지, 방문 끝내기 확인창을 확인했습니다.
   - 자세한 내용은 [0.2.9 검증 기록](docs/verification/release-0.2.9.md)에 있습니다.
 - **미해결:**
   - 일반 설치에서는 지도 위 카드가 뜨지 않습니다. 이 Pleos 이미지에는 "다른 앱 위에 표시" 권한 설정 화면이 없고, 백그라운드 화면 시작과 알림 배너도 막혀 있어 음성 질문이 기본 경로입니다.
-  - Gleo를 실제 마이크로 쓰는 흐름은 검증하지 못했습니다.
+  - Gleo를 실제 마이크로 쓰는 흐름은 검증하지 못했습니다. Gleo로 승인하는 기능은 사용자 발화 증거가 없어 막아 두었습니다.
   - 순정 내비가 안내를 끝내기 전에 확인창을 띄우는 공개 SDK 이벤트는 확인되지 않았습니다. 사전 확인은 앱의 "방문 끝내기"에서만 합니다.
   - 실차 내비 값은 확인하지 못했습니다.
 - 이전 기록: [개정 기획 개발 검증](docs/verification/persona-v4-2026-11-12.md), [Gleo 시험](docs/verification/gleo-voice-test.md)
@@ -78,7 +78,7 @@ adb logcat -s SJ SJ-DEMO SJ-NAVI   # 엔진·내비 로그
 | `domain/` | 순수 Kotlin 규칙. `goldenTime`·`PromptGate`(골든타임), `AlightDetector`(하차 확인 상태 머신) |
 | `engine/` | `JourneyEngine`: 매장마다 골든타임 → 승인 → 접수 → 도착·하차 → 호출 → 착석을 진행 |
 | `service/` | `JourneyService`(포그라운드 서비스, 엔진 유지·음성 질문)와 LOW 중요도 상태 알림 |
-| `voice/` | `VoicePromptController`(읽기 후 듣기, 승인 판정), `PleosVoiceGateway`(TTS·STT), `GleoActionReceiver` |
+| `voice/` | `VoicePromptController`(읽기 후 듣기, 승인 판정), `PleosVoiceGateway`(TTS·STT), `GleoActionReceiver`·`GleoActionHandler`(상태 조회만, 승인 차단) |
 | `data/` | `WaitingBackend`(서버 계약)와 `FakeBackend` |
 | `demo/` | `DemoController`: 데모 신호 조작 |
 | `ui/` | 정차 화면(동의·홈·방문 현황·확인 필요), 주행 중 상태, 데모 패널, 내비 위 웨이팅 카드(`MapPromptPopup`·`PromptCard`, 오버레이 권한 허용 시) |
