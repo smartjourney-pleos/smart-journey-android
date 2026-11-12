@@ -25,7 +25,7 @@ class SpeechProbeActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val prompt = graph.engine.state.value.prompt
         if (prompt == null) { Log.i(TAG, "No pending prompt"); finish(); return }
-        graph.gleoPromptId.value = prompt.id
+        graph.voiceProbePromptId.value = prompt.id
         lifecycleScope.launch {
             delay(300) // 현재 서비스의 마이크 해제가 끝나도록 한다.
             val stt = SpeechToText(applicationContext, Mode.ON_DEVICE)

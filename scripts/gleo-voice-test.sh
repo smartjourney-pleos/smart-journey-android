@@ -5,7 +5,7 @@
 # 사용법:
 #   scripts/gleo-voice-test.sh boot      # 전용 AVD를 마이크 허용(-allow-host-audio)으로 부팅하고 디버그 APK 설치
 #   scripts/gleo-voice-test.sh status    # "Gleo" → "스마트 저니 상태 알려 줘" (GET_SMART_JOURNEY_STATUS)
-#   scripts/gleo-voice-test.sh approve   # 질문을 띄운 뒤 "Gleo" → "스마트 저니 웨이팅 등록해 줘" (RESPOND_SMART_JOURNEY_PROMPT)
+#   scripts/gleo-voice-test.sh approve   # 질문을 띄운 뒤 "Gleo" → "스마트 저니 웨이팅 등록해 줘". 0.2.10부터 Gleo 승인은 막혀 있어 접수가 없어야 통과
 #   scripts/gleo-voice-test.sh app-mic   # 앱의 음성 질문에 실제 마이크로 "응" (Gleo 없이 앱 TTS→STT)
 #   scripts/gleo-voice-test.sh logs      # 마지막 결과 요약
 #   scripts/gleo-voice-test.sh stop      # 에뮬레이터 종료, Mac 음량 복원
@@ -91,7 +91,9 @@ case "${1:-}" in
     sleep 11   # 앱 자체 TTS(약 3초)와 STT(8초)가 끝난 뒤 Gleo를 부른다. 질문은 60초 뒤 만료된다.
     wake || exit 1
     speak "스마트 저니 웨이팅 등록해 줘"
-    wait_for "GleoAction: RESPOND" 25; sleep 8; summary
+    wait_for "GleoAction: " 25; sleep 8; summary
+    if a logcat -d | grep -q "SJ *: 접수 완료"; then echo "실패: Gleo 호출로 접수가 실행됐다"; exit 1; fi
+    echo "통과: Gleo 호출로 접수되지 않았다(0.2.10 승인 차단)"
     ;;
   app-mic)
     need_device; volume_up

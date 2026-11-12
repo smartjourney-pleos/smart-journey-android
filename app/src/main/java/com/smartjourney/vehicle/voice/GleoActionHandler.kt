@@ -2,51 +2,42 @@ package com.smartjourney.vehicle.voice
 
 import com.smartjourney.vehicle.domain.WaitingStatus
 import com.smartjourney.vehicle.engine.JourneyState
-import com.smartjourney.vehicle.engine.Prompt
 import com.smartjourney.vehicle.engine.StopState
 import com.smartjourney.vehicle.engine.SubmissionStatus
 import com.smartjourney.vehicle.engine.statusLine
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
 import org.json.JSONObject
-import java.util.UUID
 
-/** Android 전송과 분리한 Gleo 대화 처리. 전달 사실을 재생 완료/사용자 발화의 증거로 쓰지 않는다. */
+/**
+ * Android 전송과 분리한 Gleo 대화 처리. 현재는 상태 조회만 지원한다.
+ *
+ * Gleo Action은 모델이 만든 `ACTION_PARAM`만 전달한다(Gleo Interface 가이드 p108, 설치된 Gleo AI 4.2.0.15의
+ * `sendActionCall` 확인). 새 사용자 발화를 증명하는 값이 없으므로, 모델이 보낸 결정·토큰은 사용자 승인의 증거가 될 수 없다.
+ * 그래서 Gleo를 통한 접수·인원 변경 등의 승인은 받지 않고 토큰도 발급하지 않는다. 승인은 앱 자체 음성 질문(앱 STT 최종 인식)과
+ * 정차 중 터치로만 한다. 상태 조회는 앱의 음성 질문을 대신 맡지 않는다.
+ */
 class GleoActionHandler(
     private val state: StateFlow<JourneyState>,
     private val consented: () -> Boolean,
     private val isDemo: () -> Boolean,
-    private val respond: (String, VoiceDecision) -> Boolean,
-    private val handoff: (String?) -> Unit,
-    private val scope: CoroutineScope,
-    private val enqueueLateResult: (LateVoiceResult) -> Unit,
     private val now: () -> Long = System::currentTimeMillis,
-    private val newToken: () -> String = { UUID.randomUUID().toString() },
 ) {
-    private data class Question(val prompt: Prompt, val token: String, val expiresAt: Long)
-    private var question: Question? = null
-    private val watching = mutableSetOf<String>()
     private val announced = linkedSetOf<String>()
 
-    suspend fun handle(action: String, parameters: JSONObject = JSONObject()): GleoReply {
-        if (!consented()) {
-            invalidate()
-            return GleoReply(action, "fail", "Data sharing consent is required before starting a journey.")
-        }
+    fun handle(action: String): GleoReply {
+        if (!consented()) return GleoReply(action, "fail", "Data sharing consent is required before starting a journey.")
         return when (action) {
             STATUS -> status(action)
-            RESPOND -> answer(action, parameters)
+            // 예전 스키마를 기억한 Gleo가 부를 수 있다. 아무것도 실행하지 않고 승인에 쓸 값도 돌려주지 않는다.
+            RESPOND -> GleoReply(action, "fail",
+                "Smart Journey does not accept approvals through Gleo, so nothing was executed. " +
+                    "The user can answer the Smart Journey voice question directly or use the app screen after parking.")
             else -> GleoReply(action, "fail", "Unknown function.")
         }
     }
 
-    fun invalidate() { question = null; handoff(null) }
-
-    /** Gleo 결과 응답으로 출력 소유권을 넘긴 건은 앱 TTS로 중복 안내하지 않는다. 재생 완료 증거는 아니다. */
+    /** 이미 결과를 Gleo로 알린 접수는 앱 TTS로 중복 안내하지 않는다. 재생 완료 증거는 아니다. */
     fun shouldAnnounce(result: LateVoiceResult): Boolean = consented() && state.value.active &&
         result.requestId !in announced && state.value.stops.any { it.submissionId == result.requestId }
 
@@ -59,8 +50,12 @@ class GleoActionHandler(
         val s = state.value
         s.current?.takeIf { it.submission == SubmissionStatus.REQUESTING }?.let { return pending(action, it) }
         val prompt = s.prompt
-        if (prompt != null && (prompt.expiresAt == null || now() < prompt.expiresAt)) return ask(action, prompt)
-        invalidate()
+        if (prompt != null && (prompt.expiresAt == null || now() < prompt.expiresAt)) {
+            return GleoReply(action, "success",
+                "A Smart Journey question is waiting. The app asks it with its own voice prompt, and approvals are not accepted through Gleo.",
+                JSONObject().put("demo", isDemo()).put("active", true).put("pendingQuestion", true)
+                    .put("storeName", prompt.storeName).put("approvalThroughGleo", false))
+        }
         val stop = s.current
         if (stop != null && stop.submission != SubmissionStatus.NOT_REQUESTED) {
             stop.submissionId?.let(::markAnnounced)
@@ -71,60 +66,9 @@ class GleoActionHandler(
                 .put("status", if (s.active) s.statusLine() else "No active journey."))
     }
 
-    private suspend fun answer(action: String, parameters: JSONObject): GleoReply {
-        val prompt = state.value.prompt ?: return GleoReply(action, "fail", "There is no pending question. Check the current status; do not submit again.")
-        if (prompt.expiresAt != null && now() >= prompt.expiresAt) {
-            invalidate()
-            return GleoReply(action, "fail", "The question has expired. Nothing was executed.")
-        }
-        val decision = when (parameters.optString("decision")) {
-            "approve" -> VoiceDecision.APPROVE
-            "defer" -> VoiceDecision.DEFER
-            else -> null
-        }
-        val issued = question
-        // 상태 조회만 했다는 이유나 모델이 만든 ID만으로 승인하지 않는다.
-        // Gleo가 새 사용자 응답으로 호출했다는 신뢰 경계는 남으며, 실제 음성 재시험이 필요하다.
-        if (decision == null || issued == null || issued.prompt != prompt || now() >= issued.expiresAt ||
-            parameters.optString("questionToken") != issued.token
-        ) return ask(action, prompt)
-
-        question = null // 중복·동시 호출보다 먼저 소모한다.
-        val accepted = respond(prompt.id, decision)
-        handoff(null) // 엔진이 질문을 소모한 다음 자체 음성 소유권을 돌려준다.
-        if (!accepted) return GleoReply(action, "fail", "The question has expired or has already been answered.")
-        if (decision != VoiceDecision.APPROVE || prompt.kind != Prompt.Kind.GOLDEN_TIME) {
-            return GleoReply(action, "success", "The voice response was accepted.", JSONObject().put("decision", parameters.getString("decision")))
-        }
-        val completed = withTimeoutOrNull(5_000) {
-            state.first { s -> s.stops.none { it.submissionId == prompt.id && it.submission == SubmissionStatus.REQUESTING } }
-        }
-        val stop = (completed ?: state.value).stops.find { it.submissionId == prompt.id }
-            ?: return GleoReply(action, "fail", "The original request is no longer available. Check the current status; do not submit again.")
-        if (stop.submission == SubmissionStatus.REQUESTING) {
-            watchLateResult(prompt.id, isDemo())
-            return pending(action, stop)
-        }
-        markAnnounced(prompt.id)
-        return result(action, stop)
-    }
-
-    private fun ask(action: String, prompt: Prompt): GleoReply {
-        val token = newToken()
-        question = Question(prompt, token, minOf(prompt.expiresAt ?: Long.MAX_VALUE, now() + 60_000))
-        handoff(prompt.id)
-        return GleoReply(action, "asking",
-            "Read data.question to the user in Korean. Wait for a NEW explicit user answer after the question. " +
-                "Only then call $RESPOND with decision approve or defer and copy data.questionToken EXACTLY. " +
-                "Never invent a token, infer approval from silence, or reuse an answer from an earlier question. " +
-                "If the token is unavailable, get the current question again. Do not claim completion unless registrationStatus is CONFIRMED.",
-            JSONObject().put("demo", isDemo()).put("question", prompt.spokenText().filterNot { it.isISOControl() }.take(200))
-                .put("questionToken", token).put("requiresApproval", true))
-    }
-
     private fun pending(action: String, stop: StopState) = GleoReply(action, "asking",
         "The registration is still being processed, not confirmed and not rejected. Tell the user to wait; do not ask for approval again or resubmit. " +
-            "The app will announce the final result while the journey remains active. Use $STATUS to check the current result.",
+            "Use $STATUS to check the current result.",
         details(stop).put("requiresApproval", false))
 
     private fun result(action: String, stop: StopState): GleoReply = when (stop.submission) {
@@ -139,20 +83,6 @@ class GleoActionHandler(
     private fun details(stop: StopState) = JSONObject().put("demo", isDemo()).put("storeName", stop.store.name)
         .put("registrationStatus", stop.submission.name).put("registrationConfirmed", stop.submission == SubmissionStatus.CONFIRMED)
         .apply { stop.waiting?.let { put("partySize", it.partySize); put("ticketNo", it.ticketNo); put("aheadTeams", it.aheadTeams) } }
-
-    private fun watchLateResult(requestId: String, demo: Boolean) {
-        if (!watching.add(requestId)) return
-        scope.launch {
-            try {
-                val s = withTimeoutOrNull(60_000) {
-                    state.first { !it.active || it.stops.none { stop -> stop.submissionId == requestId && stop.submission == SubmissionStatus.REQUESTING } }
-                } ?: state.value
-                val stop = s.stops.find { it.submissionId == requestId } ?: return@launch
-                val result = LateVoiceResult(requestId, lateResultText(stop, demo) ?: return@launch)
-                if (shouldAnnounce(result)) enqueueLateResult(result)
-            } finally { watching.remove(requestId) }
-        }
-    }
 
     /** 대기 중 상태가 바뀌었으면 발화 직전에 최신 결과를 읽는다. */
     fun lateResultText(result: LateVoiceResult): String? = state.value.stops
