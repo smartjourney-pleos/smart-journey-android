@@ -33,4 +33,9 @@ class PromptGate(private val repromptAfterMin: Int = 5) {
     fun onDeclined(remainingMin: Int) {
         declinedAtMin = remainingMin
     }
+
+    /** 이번 매장은 더 묻지 않는다 (대기 허용 초과 질문을 보류했을 때). */
+    fun close() {
+        prompts = 2
+    }
 }

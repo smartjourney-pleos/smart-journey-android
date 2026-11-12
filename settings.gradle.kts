@@ -11,7 +11,10 @@ dependencyResolutionManagement {
         // Pleos 그룹은 공식 Maven에서만 받는다 (공개 저장소의 동명 아티팩트로 대체되는 의존성 혼동 방지)
         exclusiveContent {
             forRepository { maven { url = uri("https://nexus-playground.pleos.ai/repository/maven-releases/") } }
-            filter { includeGroup("ai.pleos.playground") }
+            filter {
+                includeGroup("ai.pleos.playground")
+                includeGroup("ai.pleos.playground.security") // Speech SDK의 universal-access 의존성
+            }
         }
         google()
         mavenCentral()

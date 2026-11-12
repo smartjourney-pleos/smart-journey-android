@@ -16,7 +16,7 @@ import kotlinx.coroutines.launch
  *
  * 명령: consent, start(n=매장 수), prompt(지금 걸기), approve, defer, drive, stop, remaining(n=분), speed(n=초/초), arrive,
  *       door(n=1 열림/0 닫힘), seats(n=명), alight(n=내리는 인원), board(n=탑승 인원), walkin(n=±팀),
- *       call, seat, arrived(수동 도착), mode(n=1 데모/0 실제), end, state
+ *       call, seat, arrived(수동 도착), mode(n=1 데모/0 실제), eta(n=1 실제 내비/0 데모), limit(n=분), end, state
  */
 class DemoReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -48,10 +48,12 @@ class DemoReceiver : BroadcastReceiver() {
             "seat" -> current?.waiting?.let { g.backend.seat(it.waitingId) }
             "arrived" -> g.engine.confirmManualArrival()
             "mode" -> g.demo.enabled.value = n == 1
+            "eta" -> g.demo.realEta.value = n == 1
+            "limit" -> g.setWaitLimit(n)
             "end" -> g.engine.end()
         }
         val s = g.engine.state.value
-        Log.i(TAG, "$cmd → ${s.statusLine()} | prompt=${s.prompt?.kind} alight=${s.alight} restricted=${s.restricted}")
+        Log.i(TAG, "$cmd → ${s.statusLine()} | prompt=${s.prompt?.kind} promptId=${s.prompt?.id} submission=${s.current?.submission} alight=${s.alight} restricted=${s.restricted}")
     }
 
     private companion object {

@@ -1,0 +1,44 @@
+{
+  "packageName": "com.smartjourney.vehicle",
+  "appDescription": "Smart Journey tracks navigation destinations and manages restaurant waiting requests after explicit user approval.",
+  "invokeWord": "스마트 저니",
+  "version": "0.2.0",
+  "actionCalls": [
+    {
+      "type": "function",
+      "function": {
+        "component": "service",
+        "name": "GET_SMART_JOURNEY_STATUS",
+        "description": "Get the current journey status and any pending question that needs a voice response.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": []
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "component": "service",
+        "name": "RESPOND_SMART_JOURNEY_PROMPT",
+        "description": "Apply the user's explicit approval or deferral to the pending Smart Journey question identified by its prompt ID.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "promptId": {
+              "type": "string",
+              "description": "The exact prompt ID returned with the current Smart Journey question."
+            },
+            "decision": {
+              "type": "string",
+              "enum": ["approve", "defer"],
+              "description": "Whether the user explicitly approves the current request or prefers to defer it."
+            }
+          },
+          "required": ["promptId", "decision"]
+        }
+      }
+    }
+  ]
+}

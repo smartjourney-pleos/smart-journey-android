@@ -15,6 +15,8 @@ import ai.pleos.playground.navi.data.WaypointArrivedInfo
 import ai.pleos.playground.navi.helper.NaviHelper
 import ai.pleos.playground.navi.helper.listener.NaviHelperEventListener
 import android.content.Context
+import android.util.Log
+import com.smartjourney.vehicle.BuildConfig
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.channels.BufferOverflow
@@ -59,7 +61,9 @@ class PleosNaviGateway(context: Context) : NaviGateway {
 
     private val listener = object : NaviHelperEventListener {
         override fun onTripInfo(info: TripInfo) {
-            tripFlow.tryEmit(NaviTrip(eta = info.eta, distance = info.distance))
+            // 요청 없이 온 콜백(solicited=false)이 내비가 주는 실시간 갱신이다. 에뮬레이터 검증에 이 로그를 쓴다.
+            if (BuildConfig.DEBUG) Log.i("SJ-NAVI", "onTripInfo eta=${info.eta}s distance=${info.distance}m solicited=${pendingTripError != null}")
+            tripFlow.tryEmit(NaviTrip(eta = info.eta, distance = info.distance, solicited = pendingTripError != null))
         }
 
         override fun onDestinationArrived(info: DestinationArrivedInfo) {

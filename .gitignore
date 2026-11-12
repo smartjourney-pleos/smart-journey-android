@@ -9,3 +9,4 @@ local.properties
 .env
 .kotlin/
 .claude-flow/
+.personas/

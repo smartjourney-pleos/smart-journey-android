@@ -37,6 +37,7 @@ fun DemoPanel(graph: AppGraph, journey: JourneyState, modifier: Modifier = Modif
     val driving by demo.restricted.collectAsStateWithLifecycle()
     val remaining by demo.remainingSec.collectAsStateWithLifecycle()
     val speed by demo.speed.collectAsStateWithLifecycle()
+    val realEta by demo.realEta.collectAsStateWithLifecycle()
     val received by graph.backend.received.collectAsStateWithLifecycle()
 
     val store = journey.current?.store
@@ -73,19 +74,26 @@ fun DemoPanel(graph: AppGraph, journey: JourneyState, modifier: Modifier = Modif
                 SmallButton(if (doorOpen) "문 닫기" else "문 열기", { demo.vehicle.setDoorOpen(!doorOpen) }, Modifier.weight(1f), useDemo)
             }
             Buttons {
-                SmallButton("하차 장면 (3명)", { demo.playAlight(3) }, Modifier.weight(1f), useDemo)
+                SmallButton("일행 3명 하차", { demo.playAlight(3) }, Modifier.weight(1f), useDemo)
+                SmallButton("운전자 하차", { demo.playAlight(1) }, Modifier.weight(1f), useDemo)
+            }
+            Buttons {
                 SmallButton("재탑승 (3명)", { demo.playBoard(3) }, Modifier.weight(1f), useDemo)
             }
         }
 
         Section("주행") {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Switch(checked = realEta, onCheckedChange = { demo.realEta.value = it })
+                Text(if (realEta) "남은 시간: 실제 내비(onTripInfo)" else "남은 시간: 데모 입력", fontSize = 20.sp, color = Palette.DemoInk)
+            }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
                     remaining?.let { "남은 시간 ${(it + 59) / 60}분" } ?: "경로 없음",
                     Modifier.weight(1f), fontSize = 22.sp, fontWeight = FontWeight.SemiBold,
                 )
-                SmallButton("−5분", { demo.addRemaining(-300) }, enabled = useDemo)
-                SmallButton("+5분", { demo.addRemaining(300) }, enabled = useDemo)
+                SmallButton("−5분", { demo.addRemaining(-300) }, enabled = useDemo && !realEta)
+                SmallButton("+5분", { demo.addRemaining(300) }, enabled = useDemo && !realEta)
             }
             Buttons {
                 SmallButton(if (driving) "정차" else "주행 시작", { demo.restricted.value = !driving }, Modifier.weight(1f), useDemo)
@@ -106,6 +114,9 @@ fun DemoPanel(graph: AppGraph, journey: JourneyState, modifier: Modifier = Modif
                 )
                 SmallButton("−1", { graph.backend.addWalkIn(storeId, -1) })
                 SmallButton("+1", { graph.backend.addWalkIn(storeId, 1) })
+            }
+            Buttons {
+                SmallButton("대기 90분 만들기", { graph.backend.addWalkIn(storeId, 18 - (queue?.aheadTeams ?: 0)) }, Modifier.weight(1f))
             }
             Buttons {
                 SmallButton("점주 호출", { waitingId?.let(graph.backend::call) }, Modifier.weight(1f), waitingId != null)

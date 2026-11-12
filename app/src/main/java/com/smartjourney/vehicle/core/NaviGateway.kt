@@ -17,7 +17,7 @@ data class Place(
 )
 
 /** `onTripInfo` 값. NaviHelper API Reference(TripInfo): eta는 초, distance는 미터. */
-data class NaviTrip(val eta: Int, val distance: Int)
+data class NaviTrip(val eta: Int, val distance: Int, val solicited: Boolean = true)
 
 sealed interface ArrivalEvent {
     data class Destination(val name: String) : ArrivalEvent

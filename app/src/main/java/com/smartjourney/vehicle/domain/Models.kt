@@ -20,7 +20,8 @@ data class QueueStatus(
 )
 
 enum class WaitingStatus { REGISTERED, ARRIVED, CALLED, SEATED, NO_SHOW, CANCELLED }
-enum class ArrivalResult { CONFIRMED, MANUAL, UNCONFIRMED }
+/** PARTIAL: 일행 일부만 하차 추정. 도착 완료·입장 가능으로 보지 않는다 (명세서 v4 6장). */
+enum class ArrivalResult { CONFIRMED, PARTIAL, MANUAL, UNCONFIRMED }
 enum class ApprovalMethod { TOUCH, VOICE }
 
 data class Waiting(

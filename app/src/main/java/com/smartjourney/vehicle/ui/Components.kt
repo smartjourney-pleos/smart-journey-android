@@ -57,7 +57,7 @@ fun BigButton(
             containerColor = if (primary) Palette.Primary else Palette.Button,
             contentColor = if (primary) Palette.OnPrimary else Palette.Ink,
             disabledContainerColor = Palette.Button,
-            disabledContentColor = Palette.Ink.copy(alpha = 0.32f),
+            disabledContentColor = Palette.Muted,
         ),
         border = if (enabled) null else BorderStroke(2.dp, Palette.Line),
         contentPadding = PaddingValues(horizontal = 40.dp, vertical = 16.dp),
@@ -75,13 +75,13 @@ fun SmallButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier
         colors = ButtonDefaults.buttonColors(
             containerColor = Palette.Button, contentColor = Palette.Ink,
             disabledContainerColor = Palette.Button,
-            disabledContentColor = Palette.Ink.copy(alpha = 0.32f),
+            disabledContentColor = Palette.Muted,
         ),
         contentPadding = PaddingValues(horizontal = 24.dp, vertical = 8.dp),
     ) {
         Text(
             text, fontFamily = Type.Body.fontFamily, fontSize = 26.sp, lineHeight = 34.sp,
-            fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            fontWeight = FontWeight.Bold, softWrap = true,
         )
     }
 }
@@ -94,7 +94,7 @@ fun Badge(text: String, color: Color, modifier: Modifier = Modifier) {
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Box(Modifier.size(8.dp).background(color, RoundedCornerShape(50)))
-        Text(text, style = Type.Caption.copy(color = color, fontWeight = FontWeight.Bold), maxLines = 1)
+        Text(text, style = Type.Caption.copy(color = color, fontWeight = FontWeight.Bold))
     }
 }
 
@@ -106,8 +106,8 @@ fun PartyStepper(party: Int?, onChange: (Int) -> Unit, modifier: Modifier = Modi
         color = Palette.Elevated, border = BorderStroke(2.dp, Palette.Line), shadowElevation = 6.dp,
     ) {
         Row(
-            Modifier.heightIn(min = 100.dp).padding(horizontal = 24.dp, vertical = 18.dp),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(24.dp),
+            Modifier.heightIn(min = 100.dp).padding(horizontal = 12.dp, vertical = 18.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             IconButton({ onChange(((party ?: 2) - 1).coerceAtLeast(1)) }, Modifier.size(64.dp), enabled = party == null || party > 1) {
                 Icon(painterResource(R.drawable.pleos_minus), "탑승 인원 줄이기", Modifier.size(44.dp))

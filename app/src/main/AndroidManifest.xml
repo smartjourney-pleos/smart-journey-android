@@ -10,10 +10,13 @@
     <uses-permission android:name="pleos.car.permission.NAVI_ROUTE_SEARCH" />
     <!-- 경로 설정 후 내장 내비 화면을 전경으로 요청한다 (NaviHelper.requestNavigationScreen, normal). -->
     <uses-permission android:name="pleos.car.permission.NAVI_CUSTOM_MAP" />
+    <!-- 주행 중 음성 질문·응답 (Pleos TextToSpeech·SpeechToText 3.3.1, ON_DEVICE) -->
+    <uses-permission android:name="pleos.car.permission.TTS_SERVICE" />
+    <uses-permission android:name="pleos.car.permission.STT_SERVICE" />
 
     <uses-permission android:name="android.permission.INTERNET" />
 
-    <!-- 백그라운드 엔진(JourneyService)과 상태 알림·승인 카드 -->
+    <!-- 백그라운드 엔진(JourneyService)과 비침입형 상태 알림 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
@@ -40,18 +43,6 @@
             </intent-filter>
         </activity>
 
-        <!-- 승인 카드. 별도 태스크로 떠서 닫히면 아래 화면(내비)이 그대로 남는다. 주행 중 표시 대상(DO). -->
-        <activity
-            android:name=".ui.ApprovalActivity"
-            android:excludeFromRecents="true"
-            android:exported="false"
-            android:launchMode="singleTask"
-            android:taskAffinity="com.smartjourney.vehicle.approval">
-            <meta-data
-                android:name="distractionOptimized"
-                android:value="true" />
-        </activity>
-
         <service
             android:name=".service.JourneyService"
             android:exported="false"
@@ -61,9 +52,17 @@
                 android:value="내비 경로를 따라 웨이팅 시점과 도착·하차를 확인하는 여정 엔진" />
         </service>
 
+        <!-- Gleo App Schema(assets/schema.json)의 function 호출. Gleo의 signature 권한을 가진 송신자만 부를 수 있다. -->
         <receiver
-            android:name=".service.PromptActionReceiver"
-            android:exported="false" />
+            android:name=".voice.GleoActionReceiver"
+            android:exported="true"
+            android:permission="ai.umos.gleo.permission.APP_ACTION">
+            <intent-filter>
+                <action android:name="GET_SMART_JOURNEY_STATUS" />
+                <action android:name="RESPOND_SMART_JOURNEY_PROMPT" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </receiver>
 
     </application>
 </manifest>

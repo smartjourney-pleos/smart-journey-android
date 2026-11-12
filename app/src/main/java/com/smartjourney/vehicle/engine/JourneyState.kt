@@ -37,12 +37,16 @@ sealed interface Arrival {
 /** 명세서 5.1의 웨이팅 상태. PLANNED·PROMPTED는 차량 앱 안에만 있다. */
 enum class StopPhase { PLANNED, PROMPTED, REGISTERED, ARRIVED, CALLED, SEATED, CANCELLED }
 
+/** 접수 요청의 결과. 요청 전송을 확정으로 보지 않는다(명세서 v4 7장). UNKNOWN은 재접수하지 않는다. */
+enum class SubmissionStatus { NOT_REQUESTED, REQUESTING, CONFIRMED, REJECTED, UNKNOWN }
+
 data class StopState(
     val store: Store,
     val phase: StopPhase = StopPhase.PLANNED,
     val waiting: Waiting? = null,
     val arrival: ArrivalResult? = null,
     val alighted: Int? = null,
+    val submission: SubmissionStatus = SubmissionStatus.NOT_REQUESTED,
 )
 
 /** 운전자에게 묻는 한 장의 카드. 같은 [id]는 같은 질문이다(접수 멱등키로도 쓴다). */
@@ -56,6 +60,8 @@ data class Prompt(
     val remainingMin: Int = 0,
     val ticketNo: Int? = null,
     val expiresAt: Long? = null,
+    /** 값이 있으면 대기 허용 시간 초과 확인 질문이다. 승인은 일반 접수와 같고, 보류하면 접수하지 않는다. */
+    val waitLimitMin: Int? = null,
 ) {
     enum class Kind { GOLDEN_TIME, PARTY_CHANGE, MANUAL_ARRIVAL, CALLED }
 }
@@ -63,6 +69,8 @@ data class Prompt(
 data class JourneyState(
     val active: Boolean = false,
     val partySize: Int = 0,
+    /** 사용자가 정한 대기 허용 시간(분). 예상 대기가 넘으면 접수를 권하지 않고 판단 질문을 한다. */
+    val waitLimitMin: Int = DEFAULT_WAIT_LIMIT_MIN,
     val stops: List<StopState> = emptyList(),
     val index: Int = 0,
     val remainingMin: Int? = null,
@@ -77,14 +85,29 @@ data class JourneyState(
     val current: StopState? get() = stops.getOrNull(index)
 }
 
+const val DEFAULT_WAIT_LIMIT_MIN = 30
+
+/** 일부만 하차한 상태. 도착 완료나 입장 가능으로 안내하지 않는다. */
+val StopState.partialArrival: Boolean get() = arrival == ArrivalResult.PARTIAL
+
+/** "일행 3명 도착 추정 · 1명 이동 중" */
+fun StopState.partialLine(partySize: Int): String {
+    val arrived = alighted ?: 0
+    return "일행 ${arrived}명 도착 추정 · ${(partySize - arrived).coerceAtLeast(0)}명 이동 중"
+}
+
 /** 카드와 알림이 같이 쓰는 문구 (디자인 가이드 6장). 버튼은 최대 2개다. */
 data class PromptText(val title: String, val detail: String, val primary: String, val secondary: String?)
 
 fun Prompt.text(): PromptText = when (kind) {
-    Prompt.Kind.GOLDEN_TIME -> PromptText(
-        title = "지금 $storeName 웨이팅 걸까요?",
-        detail = "${partySize}명 · 대기 ${waitMin}분 · 도착 ${remainingMin}분 후",
-        primary = "등록", secondary = "나중에",
+    Prompt.Kind.GOLDEN_TIME -> if (waitLimitMin != null) PromptText(
+        title = "$storeName 대기가 ${waitMin}분이에요. 그래도 걸까요?",
+        detail = "대기 ${waitMin}분 · 설정한 ${waitLimitMin}분보다 길어요 · ${partySize}명",
+        primary = "걸기", secondary = "보류",
+    ) else PromptText(
+        title = "$storeName 지금 웨이팅을 걸까요?",
+        detail = "도착 ${remainingMin}분 후 · 대기 ${waitMin}분 · ${partySize}명",
+        primary = "걸기", secondary = "나중에",
     )
     Prompt.Kind.PARTY_CHANGE -> PromptText(
         title = "$storeName 인원을 ${newPartySize}명으로 바꿀까요?",
@@ -93,7 +116,7 @@ fun Prompt.text(): PromptText = when (kind) {
     )
     Prompt.Kind.MANUAL_ARRIVAL -> PromptText(
         title = "자동으로 확인하지 못했어요",
-        detail = "${storeName}에 도착했으면 눌러 주세요",
+        detail = "${storeName}에 도착했으면 음성으로 알려 주세요",
         primary = "도착했어요", secondary = "닫기",
     )
     Prompt.Kind.CALLED -> PromptText(
@@ -106,21 +129,30 @@ fun Prompt.text(): PromptText = when (kind) {
 /** 상태 알림 한 줄 (디자인 가이드 N-01). */
 fun JourneyState.statusLine(): String {
     val stop = current ?: return "여정이 끝났어요"
-    val detail = when (stop.phase) {
+    val requestDetail = when (stop.submission) {
+        SubmissionStatus.REQUESTING -> "접수 결과 확인 중"
+        SubmissionStatus.UNKNOWN -> "접수 결과 확인 필요 · 다시 접수하지 마세요"
+        SubmissionStatus.REJECTED -> "접수 거절 · 매장 정책을 확인해 주세요"
+        else -> null
+    }
+    val detail = requestDetail ?: when (stop.phase) {
         StopPhase.PLANNED -> when {
             queue == null -> "웨이팅 시점 계산 중"
+            queue.estimatedWaitMin > waitLimitMin -> "대기 ${queue.estimatedWaitMin}분 · 설정한 ${waitLimitMin}분보다 길어요"
             minutesUntilPrompt != null -> "웨이팅 알림까지 ${minutesUntilPrompt}분"
             else -> "지금 웨이팅을 걸 수 있어요" // 알림을 미뤘거나 놓친 뒤
         }
         StopPhase.PROMPTED -> "지금 웨이팅 걸까요?"
-        StopPhase.REGISTERED -> when (alight) {
-            null, AlightDetector.State.WAIT_ARRIVAL -> "앞에 ${stop.waiting?.aheadTeams ?: 0}팀 · 도착 ${remainingMin ?: 0}분 후"
-            AlightDetector.State.MANUAL -> "도착했으면 눌러 주세요"
+        StopPhase.REGISTERED, StopPhase.CALLED -> if (stop.partialArrival) stop.partialLine(partySize) else when {
+            stop.phase == StopPhase.CALLED -> "입장 순서예요"
+            else -> when (alight) {
+            null, AlightDetector.State.WAIT_ARRIVAL -> "앞에 ${stop.waiting?.aheadTeams ?: 0}팀 · 도착 ${remainingMin?.let { "${it}분 후" } ?: "시간 확인 중"}"
+            AlightDetector.State.MANUAL -> "도착했으면 음성으로 알려 주세요"
             else -> "내리는 인원 확인 중"
+            }
         }
         StopPhase.ARRIVED ->
-            if (stop.arrival == ArrivalResult.CONFIRMED) "${stop.alighted}/${stop.waiting?.partySize}명 하차 확인" else "도착을 알렸어요"
-        StopPhase.CALLED -> "입장하세요"
+            if (stop.arrival == ArrivalResult.CONFIRMED) "차량 신호 기준 ${stop.alighted}/${stop.waiting?.partySize}명 하차 추정" else "도착 확인"
         StopPhase.SEATED -> "즐거운 식사 되세요"
         StopPhase.CANCELLED -> "웨이팅이 취소됐어요"
     }

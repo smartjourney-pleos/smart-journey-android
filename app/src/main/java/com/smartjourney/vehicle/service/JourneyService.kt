@@ -5,7 +5,6 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
-import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
@@ -20,14 +19,18 @@ import com.smartjourney.vehicle.engine.Prompt
 import com.smartjourney.vehicle.engine.statusLine
 import com.smartjourney.vehicle.engine.text
 import com.smartjourney.vehicle.graph
-import com.smartjourney.vehicle.ui.ApprovalActivity
+import com.smartjourney.vehicle.voice.PleosVoiceGateway
+import com.smartjourney.vehicle.voice.VoiceIssue
+import com.smartjourney.vehicle.voice.VoicePromptController
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
@@ -35,11 +38,12 @@ import kotlinx.coroutines.launch
  * 앱의 본체. 내비 뒤에서 엔진을 살려 두고 상태 알림 한 줄(N-01)을 유지한다 (명세서 2.1).
  * 앱이 뒤로 가면 프로세스가 멈출 수 있어, 엔진이 도는 동안은 포그라운드 서비스로 떠 있는다.
  */
-private const val CARD_GRACE_MS = 800L
-
 class JourneyService : Service() {
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val serviceJob = SupervisorJob()
+    private val scope = CoroutineScope(serviceJob + Dispatchers.Main.immediate)
+    private val voiceDelegate = lazy { PleosVoiceGateway(this) }
+    private val voice by voiceDelegate
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -64,25 +68,28 @@ class JourneyService : Service() {
                 }
             }
         }
+        val prompts = engine.state.map { it.prompt }.distinctUntilChanged { a, b -> a?.id == b?.id }
         scope.launch {
-            engine.state.map { it.prompt }.distinctUntilChanged { a, b -> a?.id == b?.id }.collectLatest { prompt ->
-                Notices.cancelPrompt(this@JourneyService)
-                if (prompt == null) return@collectLatest
-                // 주행 중에는 헤드업 알림만 쓴다. 카드 Activity는 앱 영역 전체를 차지해 지도를 가릴 수 있다
-                // (Pleos Window Policy). 운전자가 배너를 누르면 그때 카드가 열린다.
-                if (engine.state.value.restricted) {
-                    Notices.postPrompt(this@JourneyService, prompt)
-                    return@collectLatest
-                }
-                // 정차 중에는 카드 화면을 바로 띄워 본다. 백그라운드에서 시스템이 막으면 헤드업 알림으로 묻는다.
-                Notices.openCard(this@JourneyService)
-                delay(CARD_GRACE_MS)
-                if (!ApprovalActivity.isShowing) Notices.postPrompt(this@JourneyService, prompt)
+            prompts.collect { prompt ->
+                if (prompt == null) Notices.cancelPrompt(this@JourneyService)
+                else Notices.showPrompt(this@JourneyService, prompt)
             }
+        }
+        // 주행 중 결정은 음성으로만 한다 (명세서 v4 5장). 승인 화면·헤드업·오버레이를 띄우지 않는다.
+        scope.launch {
+            val controller = VoicePromptController(voice, { engine.state.value.prompt }, graph::respondByVoice,
+                onUnavailable = {
+                    graph.voiceIssue.value = it
+                    Notices.voiceUnavailable(this@JourneyService, it)
+                })
+            combine(prompts, graph.gleoPromptId) { prompt, gleoId -> prompt?.takeUnless { it.id == gleoId } }
+                .distinctUntilChanged { a, b -> a?.id == b?.id }
+                .collectLatest { prompt -> if (prompt != null) controller.handle(prompt) }
         }
         scope.launch {
             // 여정이 복원되지 않았거나 시작되지 않은 상태에서 서비스만 부활한 경우 안전하게 자동 종료
             delay(5_000)
+            graph.preparingJourney.first { !it } // 경로 입력이 5초를 넘을 수 있다 (에뮬레이터 7초 확인)
             if (!wasActive && !engine.state.value.active) {
                 stopSelf()
             }
@@ -97,26 +104,22 @@ class JourneyService : Service() {
 
     override fun onDestroy() {
         scope.cancel()
+        // 듣기/읽기의 finally가 리스너를 제거한 뒤 SDK 연결을 해제한다.
+        CoroutineScope(Dispatchers.Main.immediate).launch {
+            serviceJob.join()
+            if (voiceDelegate.isInitialized()) voice.release()
+        }
         Notices.cancelPrompt(this)
         super.onDestroy()
     }
 
     companion object {
-        fun start(context: Context) =
+        /** 앱이 뒤에 있으면 Android 12+가 포그라운드 서비스 시작을 막는다. 앱을 죽이지 않고 실패로 돌려준다. */
+        fun start(context: Context): Boolean = runCatching {
             ContextCompat.startForegroundService(context, Intent(context, JourneyService::class.java))
+        }.onFailure { android.util.Log.w("SJ", "여정 서비스를 시작하지 못함", it) }.isSuccess
 
         fun stop(context: Context) = context.stopService(Intent(context, JourneyService::class.java))
-    }
-}
-
-/** 알림 버튼(등록 / 나중에)을 엔진에 전달한다. */
-class PromptActionReceiver : BroadcastReceiver() {
-    override fun onReceive(context: Context, intent: Intent) {
-        val promptId = intent.getStringExtra(Notices.EXTRA_PROMPT_ID)
-        when (intent.action) {
-            Notices.ACTION_APPROVE -> context.graph.engine.approve(promptId = promptId)
-            Notices.ACTION_DEFER -> context.graph.engine.defer(promptId = promptId)
-        }
     }
 }
 
@@ -125,11 +128,10 @@ object Notices {
     private const val ID_PROMPT = 2
     private const val ID_RESULT = 3
     private const val CH_STATUS = "status"
-    private const val CH_PROMPT = "prompt"
-    private const val CH_RESULT = "result"
-    const val ACTION_APPROVE = "com.smartjourney.vehicle.action.APPROVE"
-    const val ACTION_DEFER = "com.smartjourney.vehicle.action.DEFER"
-    const val EXTRA_PROMPT_ID = "com.smartjourney.vehicle.extra.PROMPT_ID"
+    // 기존 HIGH 채널은 재생성해도 중요도가 내려가지 않아 새 ID를 쓴다. 지도 위 헤드업을 띄우지 않는다.
+    private const val CH_PROMPT = "voice_prompt_v1"
+    private const val CH_RESULT = "voice_result_v1"
+    private val OLD_CHANNELS = listOf("prompt", "result")
 
     private const val IMMUTABLE = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
 
@@ -137,10 +139,11 @@ object Notices {
         context.getSystemService(NotificationManager::class.java).createNotificationChannels(
             listOf(
                 NotificationChannel(CH_STATUS, "여정 상태", NotificationManager.IMPORTANCE_LOW),
-                NotificationChannel(CH_PROMPT, "승인 요청", NotificationManager.IMPORTANCE_HIGH),
-                NotificationChannel(CH_RESULT, "결과 알림", NotificationManager.IMPORTANCE_HIGH),
+                NotificationChannel(CH_PROMPT, "음성 응답 요청", NotificationManager.IMPORTANCE_LOW),
+                NotificationChannel(CH_RESULT, "결과 알림", NotificationManager.IMPORTANCE_LOW),
             ),
         )
+        OLD_CHANNELS.forEach { context.getSystemService(NotificationManager::class.java).deleteNotificationChannel(it) }
     }
 
     /** 상태 한 줄 (N-01). 분 단위로 계속 바뀌므로 헤드업으로 띄우지 않고 알림 센터에만 둔다. */
@@ -153,29 +156,11 @@ object Notices {
             )
             .build()
 
-    private fun cardIntent(context: Context) =
-        Intent(context, ApprovalActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-
-    /** 승인 카드 화면을 띄워 본다. 백그라운드에서는 시스템이 조용히 막을 수 있다. */
-    fun openCard(context: Context) {
-        runCatching { context.startActivity(cardIntent(context)) }
-    }
-
-    /**
-     * 승인 요청 헤드업 알림. Pleos 에뮬레이터에서는 category가 navigation이어야 헤드업으로 뜬다
-     * (없으면 중요도가 높아도 안 뜬다). 제목·내용과 버튼 2개가 내비 위 배너로 보인다 (C-04 ⓑ).
-     * 배너 자체를 누르면 승인 카드가 열린다.
-     */
-    fun postPrompt(context: Context, prompt: Prompt) {
+    /** 시스템 알림 영역에만 남긴다. 전체 화면·헤드업·터치 승인으로 지도를 덮지 않는다. */
+    fun showPrompt(context: Context, prompt: Prompt) {
         val text = prompt.text()
-        val open = PendingIntent.getActivity(context, 1, cardIntent(context), IMMUTABLE)
-        val notification = builder(context, CH_PROMPT, text.title, text.detail)
-            .setCategory(NotificationCompat.CATEGORY_NAVIGATION)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
+        val notification = builder(context, CH_PROMPT, text.title, "${text.detail} · 음성으로 답해 주세요")
             .setOngoing(true)
-            .setContentIntent(open)
-            .addAction(0, text.primary, action(context, ACTION_APPROVE, prompt.id))
-            .apply { text.secondary?.let { addAction(0, it, action(context, ACTION_DEFER, prompt.id)) } }
             .build()
         context.getSystemService(NotificationManager::class.java).notify(ID_PROMPT, notification)
     }
@@ -184,11 +169,16 @@ object Notices {
         context.getSystemService(NotificationManager::class.java).cancel(ID_PROMPT)
     }
 
+    fun voiceUnavailable(context: Context, issue: VoiceIssue) = result(context, when (issue) {
+        VoiceIssue.SPEECH_UNAVAILABLE -> "음성 안내에 연결하지 못했어요. 실행하지 않았어요. 안전하게 정차한 뒤 확인해 주세요"
+        VoiceIssue.MICROPHONE_UNAVAILABLE -> "마이크에 연결하지 못했어요. 실행하지 않았어요. 안전하게 정차한 뒤 확인해 주세요"
+        VoiceIssue.NO_RESPONSE -> "응답이 없어 실행하지 않았어요. 안전하게 정차한 뒤 확인해 주세요"
+        VoiceIssue.UNRECOGNIZED -> "답변을 이해하지 못해 실행하지 않았어요. 안전하게 정차한 뒤 확인해 주세요"
+    })
+
     /** 결과 알림 (C-17). 잠깐 보이고 사라진다. */
     fun result(context: Context, message: String) {
         val notification = builder(context, CH_RESULT, "스마트 저니", message)
-            .setCategory(NotificationCompat.CATEGORY_NAVIGATION)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setTimeoutAfter(5_000)
             .build()
         context.getSystemService(NotificationManager::class.java).notify(ID_RESULT, notification)
@@ -199,13 +189,6 @@ object Notices {
             .setSmallIcon(R.drawable.ic_stat_journey)
             .setContentTitle(title)
             .setContentText(text)
-
-    private fun action(context: Context, action: String, promptId: String? = null) = PendingIntent.getBroadcast(
-        context,
-        if (action == ACTION_APPROVE) 100 else 101,
-        Intent(context, PromptActionReceiver::class.java).setAction(action).apply {
-            if (promptId != null) putExtra(EXTRA_PROMPT_ID, promptId)
-        },
-        IMMUTABLE,
-    )
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setSilent(true)
 }

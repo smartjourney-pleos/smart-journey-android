@@ -8,6 +8,8 @@ import com.smartjourney.vehicle.domain.WaitingStatus
 import com.smartjourney.vehicle.engine.JourneyState
 import com.smartjourney.vehicle.engine.StopPhase
 import com.smartjourney.vehicle.engine.StopState
+import com.smartjourney.vehicle.engine.SubmissionStatus
+import com.smartjourney.vehicle.engine.DEFAULT_WAIT_LIMIT_MIN
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -30,6 +32,7 @@ object JourneyStateJsonCodec {
             put("version", 1)
             put("savedAt", now)
             put("partySize", state.partySize)
+            put("waitLimitMin", state.waitLimitMin)
             put("index", state.index)
             put("stops", JSONArray().apply {
                 state.stops.forEach { stop ->
@@ -44,6 +47,7 @@ object JourneyStateJsonCodec {
                             put("poiSubId", stop.store.poiSubId)
                         })
                         put("phase", stop.phase.name)
+                        put("submission", stop.submission.name)
                         stop.waiting?.let { w ->
                             put("waiting", JSONObject().apply {
                                 put("waitingId", w.waitingId)
@@ -107,7 +111,11 @@ object JourneyStateJsonCodec {
                     runCatching { ArrivalResult.valueOf(it) }.getOrNull()
                 }
                 val alighted = if (stopObj.has("alighted") && !stopObj.isNull("alighted")) stopObj.getInt("alighted") else null
-                StopState(store, phase, waiting, arrival, alighted)
+                // 요청 중에 프로세스가 끝났으면 접수됐는지 알 수 없다. 재접수하지 않도록 확인 필요로 복원한다.
+                val submission = runCatching { SubmissionStatus.valueOf(stopObj.getString("submission")) }
+                    .getOrDefault(if (waiting != null) SubmissionStatus.CONFIRMED else SubmissionStatus.NOT_REQUESTED)
+                    .let { if (it == SubmissionStatus.REQUESTING) SubmissionStatus.UNKNOWN else it }
+                StopState(store, phase, waiting, arrival, alighted, submission)
             }
             val logsArray = json.optJSONArray("log")
             val logs = if (logsArray != null) {
@@ -117,6 +125,7 @@ object JourneyStateJsonCodec {
             JourneyState(
                 active = true,
                 partySize = partySize,
+                waitLimitMin = json.optInt("waitLimitMin", DEFAULT_WAIT_LIMIT_MIN),
                 stops = stops,
                 index = index.coerceIn(0, (stops.size - 1).coerceAtLeast(0)),
                 log = logs,

@@ -66,14 +66,14 @@ class JourneyEngineTest {
         assertEquals(4, engine.state.value.current?.waiting?.partySize)
         assertNull(engine.state.value.prompt)
 
-        // 도착 → 정차 → 문 열림 → 1명 남고 문 닫힘 → 5초 유지
+        // 도착 → 정차 → 문 열림 → 모두 내리고 문 닫힘 → 5초 유지
         signals.remaining.value = 0
         signals.arrive.tryEmit(Arrival.Current)
         runCurrent()
         signals.driving.value = false
         signals.doorOpen.value = true
         runCurrent()
-        signals.occupiedNow.value = 1
+        signals.occupiedNow.value = 0
         signals.doorOpen.value = false
         runCurrent()
         advanceTimeBy(4_000)
@@ -85,9 +85,9 @@ class JourneyEngineTest {
         val stop = engine.state.value.current!!
         assertEquals(StopPhase.ARRIVED, stop.phase)
         assertEquals(ArrivalResult.CONFIRMED, stop.arrival)
-        assertEquals(3, stop.alighted)
-        assertTrue(backend.received.value.any { "3/4명 하차" in it })
-        assertEquals("${backend.stores()[0].name} · 3/4명 하차 확인", engine.state.value.statusLine())
+        assertEquals(4, stop.alighted)
+        assertTrue(backend.received.value.any { "4/4명 하차" in it })
+        assertEquals("${backend.stores()[0].name} · 차량 신호 기준 4/4명 하차 추정", engine.state.value.statusLine())
     }
 
     @Test

@@ -24,6 +24,9 @@ class DemoController(private val scope: CoroutineScope) {
     /** 현재 목적 매장까지 남은 시간(초). 주행 중일 때만 줄어든다. */
     val remainingSec = MutableStateFlow<Int?>(null)
 
+    /** true면 데모 모드에서도 남은 시간은 실제 내비(onTripInfo)를 쓴다. 내비 경로 시뮬레이션 시연용. */
+    val realEta = MutableStateFlow(false)
+
     /** 1초에 줄어드는 초. 60이면 실제 1초에 1분이 지나간다. */
     val speed = MutableStateFlow(60)
 

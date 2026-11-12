@@ -1,6 +1,7 @@
 package com.smartjourney.vehicle.engine
 
 import com.smartjourney.vehicle.data.JourneyStorage
+import com.smartjourney.vehicle.data.RegistrationRejectedException
 import com.smartjourney.vehicle.data.WaitingBackend
 import com.smartjourney.vehicle.domain.AlightDetector
 import com.smartjourney.vehicle.domain.ApprovalMethod
@@ -29,6 +30,7 @@ import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.util.UUID
 
 private const val PROMPT_TIMEOUT_MS = 60_000L
 private const val INPUT_STALE_MS = 60_000L
@@ -82,11 +84,25 @@ class JourneyEngine(
     private var lastInputAt = 0L
     private var lastEtaMin: Int? = null
     private var lastEtaAt = 0L
-    private var promptSeq = 0
 
-    fun start(partySize: Int, stops: List<Store>) {
+    fun validateStart(partySize: Int, stops: List<Store>) {
+        require(!_state.value.active) { "진행 중인 방문을 먼저 종료해 주세요" }
+        require(partySize in 1..9) { "방문 인원은 1~9명" }
         require(stops.size in 1..3) { "코스는 1~3곳" }
-        _state.value = JourneyState(active = true, partySize = partySize, stops = stops.map { StopState(it) })
+        require(stops.none { target -> _state.value.stops.any { previous ->
+            previous.store.id == target.id && (
+                previous.submission == SubmissionStatus.UNKNOWN ||
+                    previous.submission == SubmissionStatus.REQUESTING ||
+                    previous.waiting?.status in setOf(WaitingStatus.REGISTERED, WaitingStatus.ARRIVED, WaitingStatus.CALLED)
+                )
+        } }) { "이 매장의 기존 접수 결과를 먼저 확인해 주세요. 중복 접수를 막기 위해 새 요청을 중단했어요" }
+    }
+
+    fun start(partySize: Int, stops: List<Store>, waitLimitMin: Int = DEFAULT_WAIT_LIMIT_MIN) {
+        validateStart(partySize, stops)
+        _state.value = JourneyState(
+            active = true, partySize = partySize, waitLimitMin = waitLimitMin, stops = stops.map { StopState(it) },
+        )
         log("여정 시작 · ${stops.joinToString(" → ") { it.name }} · ${partySize}명")
         runStop()
     }
@@ -121,15 +137,34 @@ class JourneyEngine(
         }
     }
 
-    /** 카드의 보조 버튼, 닫기, 60초 무응답 */
+    /** 오래된 질문·중복 인식·기한 지난 음성 응답은 상태를 변경하지 않는다. Main에서 호출한다. */
+    fun respondByVoice(promptId: String, approved: Boolean): Boolean {
+        val prompt = _state.value.prompt ?: return false
+        if (prompt.id != promptId || (prompt.expiresAt != null && now() >= prompt.expiresAt)) return false
+        if (approved) approve(ApprovalMethod.VOICE, promptId) else defer(promptId)
+        return true
+    }
+
+    /** 정차 중 홈에서 바꾼 대기 허용 시간. 이미 나간 질문은 바꾸지 않는다. */
+    fun setWaitLimit(minutes: Int) {
+        if (_state.value.active) _state.update { it.copy(waitLimitMin = minutes) }
+    }
+
+    /** 보류, 60초 무응답 */
     fun defer(promptId: String? = null) {
         val prompt = _state.value.prompt ?: return
         if (promptId != null && prompt.id != promptId) return
         promptTimeout?.cancel()
         if (prompt.kind == Prompt.Kind.GOLDEN_TIME) {
-            gate.onDeclined(_state.value.remainingMin ?: 0)
+            if (prompt.waitLimitMin != null) {
+                // 대기 허용 초과 질문을 보류하면 이번 매장은 다시 묻지 않는다. 대체 매장 추천·경로 변경도 하지 않는다.
+                gate.close()
+                log("${prompt.storeName} 대기 ${prompt.waitMin}분 · 허용 ${prompt.waitLimitMin}분 초과로 보류")
+            } else {
+                gate.onDeclined(_state.value.remainingMin ?: 0)
+                log("${prompt.storeName} 웨이팅은 나중에")
+            }
             updateStop { it.copy(phase = StopPhase.PLANNED) }
-            log("${prompt.storeName} 웨이팅은 나중에")
         }
         _state.update { it.copy(prompt = null) }
     }
@@ -139,33 +174,16 @@ class JourneyEngine(
         val s = _state.value
         val stop = s.current ?: return
         val queue = s.queue ?: return
-        if (stop.phase != StopPhase.PLANNED || s.prompt != null) return
+        if (stop.phase != StopPhase.PLANNED || stop.submission != SubmissionStatus.NOT_REQUESTED || s.prompt != null) return
         showGoldenTime(stop, queue, s.remainingMin ?: 0)
     }
 
     /** 자동 확인에 실패했을 때 "도착했어요" */
     fun confirmManualArrival() = reportArrival(ArrivalResult.MANUAL, null)
 
-    fun end(revokedConsent: Boolean = false) {
-        val s = _state.value
-        if (!s.active) return
-        stopJob?.cancel()
-        val stop = s.current
-        val waiting = stop?.waiting
-        if (waiting != null && stop.phase == StopPhase.REGISTERED) {
-            val unconfirmed = arrived && !arrivalReported
-            scope.launch {
-                runCatching {
-                    if (revokedConsent) {
-                        backend.cancel(waiting.waitingId)
-                    } else {
-                        // 도착은 했는데 인원을 확정하지 못했으면 성공으로 보내지 않고 "미확인"으로 알린다
-                        if (unconfirmed) backend.reportArrival(waiting.waitingId, ArrivalResult.UNCONFIRMED, null, waiting.partySize)
-                        else backend.cancel(waiting.waitingId)
-                    }
-                }
-            }
-        }
+    fun end() {
+        if (!_state.value.active) return
+        // 방문 추적 종료는 접수 취소 승인이 아니다. 확정된 접수는 그대로 보존한다 (AGENTS: 승인 없는 접수 변경 금지).
         finish()
     }
 
@@ -180,7 +198,7 @@ class JourneyEngine(
 
         arrived = stop.arrival != null
         verifying = false
-        arrivalReported = stop.arrival != null
+        arrivalReported = stop.arrival != null && !stop.partialArrival
         manualPrompted = false
         lastEtaMin = null
         lastInputAt = now()
@@ -248,7 +266,7 @@ class JourneyEngine(
         }
         when (stop.phase) {
             StopPhase.PLANNED ->
-                if (decision is GoldenTime.Prompt && _state.value.prompt == null && gate.shouldPrompt(remainingMin)) {
+                if (stop.submission == SubmissionStatus.NOT_REQUESTED && decision is GoldenTime.Prompt && _state.value.prompt == null && gate.shouldPrompt(remainingMin)) {
                     log("골든타임 · ${stop.store.name} 대기 ${queue.estimatedWaitMin}분, 도착 ${remainingMin}분 후")
                     showGoldenTime(stop, queue, remainingMin)
                 }
@@ -265,6 +283,7 @@ class JourneyEngine(
                 id = newPromptId(), kind = Prompt.Kind.GOLDEN_TIME, storeName = stop.store.name,
                 partySize = _state.value.partySize, waitMin = queue.estimatedWaitMin, remainingMin = remainingMin,
                 expiresAt = now() + PROMPT_TIMEOUT_MS,
+                waitLimitMin = _state.value.waitLimitMin.takeIf { queue.estimatedWaitMin > it },
             ),
         )
         promptTimeout = launchInStop {
@@ -275,25 +294,32 @@ class JourneyEngine(
 
     private fun register(prompt: Prompt, method: ApprovalMethod) {
         val stop = _state.value.current ?: return
+        if (stop.submission != SubmissionStatus.NOT_REQUESTED) return
         val partySize = _state.value.partySize
         _state.update { it.copy(prompt = null) }
+        updateStop { it.copy(submission = SubmissionStatus.REQUESTING) }
         launchInStop {
             try {
                 val waiting = backend.register(stop.store.id, partySize, method, idempotencyKey = prompt.id)
-                updateStop { it.copy(phase = StopPhase.REGISTERED, waiting = waiting) }
+                updateStop { it.copy(phase = StopPhase.REGISTERED, waiting = waiting, submission = SubmissionStatus.CONFIRMED) }
                 log("접수 완료 · ${stop.store.name} ${partySize}명 · 번호 ${waiting.ticketNo} · 앞에 ${waiting.aheadTeams}팀")
-                notice("${stop.store.name}에 ${partySize}명으로 등록했어요. 앞에 ${waiting.aheadTeams}팀 있어요")
+                notice("${if (backend.isDemo) "데모 접수예요. " else ""}${stop.store.name}에 ${partySize}명으로 등록했어요. 앞에 ${waiting.aheadTeams}팀 있어요")
                 _state.value.remainingMin?.let(::sendEta)
                 launchInStop { backend.waiting(waiting.waitingId).collect(::onWaiting) }
                 startDetectorIfReady()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                // 다음 입력 변화 때 다시 묻는다
-                gate = PromptGate()
-                updateStop { it.copy(phase = StopPhase.PLANNED) }
-                log("접수 실패 · ${e.message}")
-                notice("등록하지 못했어요. 잠시 뒤 다시 물어볼게요")
+                // 타임아웃·연결 단절은 서버에서 이미 접수됐을 수 있다. 자동 재접수 금지.
+                val rejected = e is RegistrationRejectedException
+                updateStop {
+                    it.copy(phase = StopPhase.PLANNED, submission = if (rejected) SubmissionStatus.REJECTED else SubmissionStatus.UNKNOWN)
+                }
+                log(if (rejected) "접수 거절" else "접수 결과 확인 필요")
+                notice(
+                    if (rejected) "접수가 거절됐어요. 정차 후 매장 정책을 확인해 주세요"
+                    else "접수 결과를 확인하지 못했어요. 다시 접수하지 말고 정차 후 확인해 주세요",
+                )
             }
         }
     }
@@ -348,6 +374,9 @@ class JourneyEngine(
 
     private fun finish() {
         stopJob?.cancel()
+        if (_state.value.current?.submission == SubmissionStatus.REQUESTING) {
+            updateStop { it.copy(submission = SubmissionStatus.UNKNOWN) }
+        }
         promptTimeout?.cancel()
         _state.update { it.copy(active = false, prompt = null) }
         log("여정 종료")
@@ -406,8 +435,13 @@ class JourneyEngine(
     private fun afterDetector(d: AlightDetector) {
         _state.update { it.copy(alight = d.state) }
         when (d.state) {
-            AlightDetector.State.CONFIRMED -> reportArrival(ArrivalResult.CONFIRMED, d.alighted)
-            AlightDetector.State.MANUAL -> if (!arrivalReported && !manualPrompted) {
+            AlightDetector.State.CONFIRMED -> {
+                val alighted = d.alighted ?: 0
+                val partySize = _state.value.current?.waiting?.partySize ?: 0
+                if (alighted < partySize) onPartialArrival(alighted) else reportArrival(ArrivalResult.CONFIRMED, alighted)
+            }
+            // 일부 도착 뒤에는 나머지 일행을 기다린다. 주차가 길어져도 도착 확인 질문을 하지 않는다.
+            AlightDetector.State.MANUAL -> if (!arrivalReported && !manualPrompted && _state.value.current?.partialArrival != true) {
                 manualPrompted = true
                 val s = _state.value
                 log("자동으로 확인하지 못함 · 수동 확인 요청")
@@ -420,6 +454,22 @@ class JourneyEngine(
             }
             else -> Unit
         }
+    }
+
+    /**
+     * 일행 일부만 내렸다 (운전자가 일행을 먼저 내려 주고 주차하러 가는 경우). 도착 완료·입장 가능으로 처리하지 않는다.
+     * 나머지 일행의 하차를 보도록 감지를 다시 시작하고, 하차 인원이 늘었을 때만 갱신한다.
+     */
+    private fun onPartialArrival(alighted: Int) {
+        val stop = _state.value.current ?: return
+        val waiting = stop.waiting ?: return
+        detector = AlightDetector(waiting.partySize).also { it.onArrived(now(), true) }
+        if (stop.partialArrival && alighted <= (stop.alighted ?: 0)) return
+        updateStop { it.copy(arrival = ArrivalResult.PARTIAL, alighted = alighted) }
+        val line = _state.value.current!!.partialLine(waiting.partySize)
+        log("일부 도착 · $line")
+        notice("${stop.store.name} · $line")
+        launchInStop { runCatching { backend.reportArrival(waiting.waitingId, ArrivalResult.PARTIAL, alighted, waiting.partySize) } }
     }
 
     private fun reportArrival(result: ArrivalResult, alighted: Int?) {
@@ -441,12 +491,13 @@ class JourneyEngine(
             }
             // 도착 전에 호출됐으면 호출 상태를 유지한다
             updateStop { it.copy(phase = if (it.phase == StopPhase.CALLED) it.phase else StopPhase.ARRIVED, arrival = result, alighted = alighted) }
+            val sent = if (backend.isDemo) "데모 매장에 전송" else "매장에 전송"
             if (result == ArrivalResult.CONFIRMED) {
-                log("하차 확인 · $alighted/${waiting.partySize}명 · 매장에 전송")
-                notice("$alighted/${waiting.partySize}명 하차 확인 · 매장에 알렸어요")
+                log("하차 추정 · $alighted/${waiting.partySize}명 · $sent")
+                notice("차량 신호 기준 $alighted/${waiting.partySize}명 하차 추정 · $sent")
             } else {
-                log("도착 알림(고객 확인) · 매장에 전송")
-                notice("${stop.store.name}에 도착을 알렸어요")
+                log("도착(고객 확인) · $sent")
+                notice("${stop.store.name} 도착 확인 · $sent")
             }
         }
     }
@@ -503,7 +554,7 @@ class JourneyEngine(
         _notices.tryEmit(message)
     }
 
-    private fun newPromptId() = "p-${now()}-${++promptSeq}"
+    private fun newPromptId() = UUID.randomUUID().toString()
 
     private fun log(message: String) {
         logger(message)

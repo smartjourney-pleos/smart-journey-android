@@ -19,9 +19,12 @@ import com.smartjourney.vehicle.data.PreferencesJourneyStorage
 import com.smartjourney.vehicle.demo.DemoController
 import com.smartjourney.vehicle.domain.Store
 import com.smartjourney.vehicle.engine.Arrival
+import com.smartjourney.vehicle.engine.DEFAULT_WAIT_LIMIT_MIN
 import com.smartjourney.vehicle.engine.JourneyEngine
 import com.smartjourney.vehicle.engine.JourneySignals
 import com.smartjourney.vehicle.service.JourneyService
+import com.smartjourney.vehicle.voice.VoiceDecision
+import com.smartjourney.vehicle.voice.VoiceIssue
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -31,6 +34,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flatMapLatest
@@ -44,6 +50,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 
 private const val TAG = "SJ"
 private const val DEFAULT_LEG_SEC = 25 * 60
+private const val MIN_DEMO_LEG_SEC = 5 * 60
 private const val REAL_TRIP_PERIOD_MS = 30_000L
 private const val CAPS_ATTEMPTS = 3
 const val CONSENT_VERSION = "2026-11-11"
@@ -69,7 +76,8 @@ class AppGraph(private val context: Context) {
     val demo = DemoController(scope)
     val backend = FakeBackend()
     val storage = PreferencesJourneyStorage(context)
-    val signals = AppSignals(context, NaviGatewayFactory.create(context), demo, scope)
+    val navi = NaviGatewayFactory.create(context)
+    val signals = AppSignals(context, navi, demo, scope)
     val engine = JourneyEngine(signals, backend, scope, storage = storage, logger = { if (BuildConfig.DEBUG) Log.i(TAG, it) })
 
     private val prefs = context.getSharedPreferences("smart_journey", Context.MODE_PRIVATE)
@@ -79,6 +87,28 @@ class AppGraph(private val context: Context) {
      * 고지 내용이 바뀌면 [CONSENT_VERSION]을 올려 다시 동의받는다. 실서버 연동 뒤에는 GET /consent/notice의 version을 쓴다.
      */
     val consented = MutableStateFlow(prefs.getString("consent_version", null) == CONSENT_VERSION)
+
+    /** 대기 허용 시간(분). 정차 중 홈에서 바꾼다 (명세서 v4 6장). */
+    val waitLimitMin = MutableStateFlow(prefs.getInt("wait_limit_min", DEFAULT_WAIT_LIMIT_MIN))
+
+    fun setWaitLimit(minutes: Int) {
+        val value = minutes.coerceIn(10, 120)
+        prefs.edit().putInt("wait_limit_min", value).apply()
+        waitLimitMin.value = value
+        engine.setWaitLimit(value)
+    }
+
+    /** 마지막 음성 실패. 정차 후 예외 화면에서 확인한다. 질문은 실행하지 않았다. */
+    val voiceIssue = MutableStateFlow<VoiceIssue?>(null)
+
+    /** 내비에 경로를 넣는 중. 이 동안 서비스가 '여정 없음'으로 보고 스스로 멈추지 않게 한다. */
+    val preparingJourney = MutableStateFlow(false)
+
+    /** 내비 경로 입력 실패 등 방문 시작 오류. */
+    val startError = MutableStateFlow<String?>(null)
+
+    /** Gleo가 현재 질문을 맡으면 앱의 STT가 Gleo의 마이크를 가로채지 않는다. */
+    val gleoPromptId = MutableStateFlow<String?>(null)
 
     init {
         if (consented.value) {
@@ -94,27 +124,39 @@ class AppGraph(private val context: Context) {
         prefs.edit().putString("consent_version", if (agreed) CONSENT_VERSION else null).apply()
         consented.value = agreed
         if (!agreed) {
-            engine.end(revokedConsent = true)
+            engine.end()
             storage.clear()
         }
     }
 
+    fun respondByVoice(promptId: String, decision: VoiceDecision): Boolean =
+        consented.value && engine.respondByVoice(promptId, decision == VoiceDecision.APPROVE)
+
     /** 내비에 경로를 넣고 엔진을 켠다. 실제 신호 모드에서 내비 입력이 실패하면 시작하지 않는다. */
     suspend fun startJourney(partySize: Int, stops: List<Store>): Result<Unit> {
         if (!consented.value) return Result.failure(IllegalStateException("동의가 필요해요"))
+        runCatching { engine.validateStart(partySize, stops) }.exceptionOrNull()?.let { return Result.failure(it) }
         // 경로를 넣으면 내비가 앞으로 나오고 앱은 뒤로 간다. 그 전에 포그라운드 서비스를 띄워 둔다.
-        JourneyService.start(context)
-        val route = signals.setRoute(stops)
+        if (!JourneyService.start(context)) {
+            startError.value = "앱 화면을 연 상태에서 방문을 시작해 주세요"
+            return Result.failure(IllegalStateException("포그라운드 서비스를 시작할 수 없어요"))
+        }
+        preparingJourney.value = true
+        val route = try { signals.setRoute(stops) } finally { preparingJourney.value = false }
         if (route.isFailure && !demo.enabled.value) {
             JourneyService.stop(context)
+            startError.value = "내비에 경로를 넣지 못했어요 (${route.exceptionOrNull()?.message})"
             return route
         }
+        startError.value = null
         if (route.isFailure) Log.w(TAG, "내비 경로 입력 실패, 데모 신호로 계속: ${route.exceptionOrNull()?.message}")
-        engine.start(partySize, stops)
+        engine.start(partySize, stops, waitLimitMin.value)
         if (demo.enabled.value) demo.onJourneyStarted()
         return Result.success(Unit)
     }
 }
+
+enum class EtaSource { NAVI_LIVE, NAVI_REQUEST, DEMO }
 
 /** 실제 SDK 신호와 데모 신호 중 하나를 골라 엔진에 준다. 데모 패널의 스위치로 바꾼다. */
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -197,24 +239,44 @@ class AppSignals(
 
     override val routeChanged: Flow<Unit> = navi.routeChanged
 
-    override fun remainingSec(target: Store): Flow<Int> = demo.enabled.flatMapLatest { useDemo ->
-        flow {
-            val place = target.toPlace()
-            // 내비가 주는 실제 남은 시간. 내비 연동이 없는 기기에서는 null.
-            val first = withTimeoutOrNull(4_000) { runCatching { navi.requestTrip(place)?.eta }.getOrNull() }
-            if (useDemo) {
-                // 에뮬레이터는 차가 움직이지 않으므로, 실제 값에서 시작해 데모 조작기가 줄여 나간다
-                demo.startLeg(first ?: DEFAULT_LEG_SEC)
-                emitAll(demo.remainingSec.filterNotNull())
-            } else {
-                first?.let { emit(it) }
-                while (true) {
-                    delay(REAL_TRIP_PERIOD_MS)
-                    runCatching { navi.requestTrip(place)?.eta }.getOrNull()?.let { emit(it) }
+    /** 남은 시간을 어디서 받았는지. 화면의 실제 SDK/데모 입력 배지에 쓴다. */
+    val etaSource = MutableStateFlow<EtaSource?>(null)
+
+    override fun remainingSec(target: Store): Flow<Int> =
+        combine(demo.enabled, demo.realEta) { useDemo, realEta -> useDemo && !realEta }.flatMapLatest { demoEta ->
+            flow {
+                val place = target.toPlace()
+                // 내비가 주는 실제 남은 시간. 내비 연동이 없는 기기에서는 null.
+                val first = withTimeoutOrNull(4_000) { runCatching { navi.requestTrip(place)?.eta }.getOrNull() }
+                if (demoEta) {
+                    // 에뮬레이터는 차가 움직이지 않으므로, 실제 값에서 시작해 데모 조작기가 줄여 나간다
+                    etaSource.value = EtaSource.DEMO
+                    // 목적지가 바로 앞이면(에뮬레이터 기본 위치) 시연이 안 되므로 기본 구간으로 시작한다
+                    demo.startLeg(first?.takeIf { it >= MIN_DEMO_LEG_SEC } ?: DEFAULT_LEG_SEC)
+                    emitAll(demo.remainingSec.filterNotNull())
+                } else {
+                    etaSource.value = if (first != null) EtaSource.NAVI_REQUEST else null
+                    first?.let { emit(it) }
+                    // 안내 중 내비가 보내는 onTripInfo를 구독해 제안 시점을 다시 계산한다.
+                    // 콜백이 오지 않는 내비를 대비해 requestTrip 조회를 느린 주기로 함께 돌린다.
+                    emitAll(
+                        merge(
+                            navi.trip.drop(1).map { trip ->
+                                if (!trip.solicited) etaSource.value = EtaSource.NAVI_LIVE
+                                else if (etaSource.value == null) etaSource.value = EtaSource.NAVI_REQUEST
+                                trip.eta
+                            },
+                            flow {
+                                while (true) {
+                                    delay(REAL_TRIP_PERIOD_MS)
+                                    runCatching { navi.requestTrip(place) } // 결과는 navi.trip으로 온다
+                                }
+                            },
+                        ),
+                    )
                 }
-            }
+            }.distinctUntilChanged()
         }
-    }
 
     override suspend fun sensorsSupported(): Boolean =
         demo.enabled.value || realCaps.await()?.let { it.seatSupported && it.doorSupported } == true
