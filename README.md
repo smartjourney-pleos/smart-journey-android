@@ -11,35 +11,49 @@ Kotlin 2.0, Jetpack Compose, Coroutines/Flow, Pleos Vehicle SDK 2.3.2, Pleos Nav
 - 에뮬레이터/차량의 Vehicle 서비스 **2.3.13 이상**, Navi 서비스 **2.0.1 이상** 필요
 - 정차 중 여정 준비 화면의 **연결 환경**에 SDK 버전과 설치된 서비스 버전을 표시합니다. 최소 요구 버전은 SDK AAR의 메타데이터를 따르며, 서비스가 없거나 낮으면 설치·업데이트 안내가 나옵니다.
 
-## 0.2.6 — 개정 기획(v4) 1차 제출 빌드
+## 0.2.9 — 개정 기획(v4) 빌드
 
-정차 중에는 홈에서 방문을 계획하고 방문 현황에서 결과를 확인합니다. **주행 중에는 화면을 띄우지 않고 내비를 유지한 채 음성으로만 묻고 답합니다.** 헤드업 알림·승인 카드·오버레이는 제거했습니다.
+정차 중에는 홈에서 방문을 계획하고, 방문 현황에서 결과를 확인합니다. **주행 중에는 내비 화면을 그대로 두고 음성으로 묻고 답하는 것이 기본입니다.** 사용자가 "다른 앱 위에 표시" 권한을 허용한 환경에서만 내비 위에 웨이팅 질문 카드를 함께 띄웁니다.
 
 | 핵심 화면 | 내용 |
 | --- | --- |
 | 1. 동의 | 목적·전송 항목·수신처·보유 기간·철회, 차량 기능 지원 여부 |
 | 2. 홈(방문 계획) | 탑승 인원 제안과 수정, 방문지·지원 방식(웨이팅 연동 · 데모), 대기 허용 시간(기본 30분), 방문 시작 |
-| 3. 주행 음성 흐름 | 화면 없음. Pleos TTS로 질문 → 끝난 뒤 STT로 응답 |
-| 4. 방문 현황 | 도착 예상·예상 대기·요청 전/요청 중/확정/실패/확인 필요·접수 번호, 다음 방문 인원 카드 |
+| 3. 주행 중 질문 | Pleos TTS로 질문한 뒤 STT로 응답을 받음. 오버레이 권한이 있으면 내비 위 카드(10초 링, "나중에"/"등록")도 표시 |
+| 4. 방문 현황 | 도착 예상·예상 대기·요청 전/요청 중/확정/실패/확인 필요·접수 번호, 다음 방문 인원 카드, 방문 끝내기 |
 | 5. 도착 후 확인 | 목적지 도착 감지, 하차 추정, 일부 도착("일행 3명 도착 추정 · 1명 이동 중") |
 | 6. 확인 필요(예외·미지원) | 음성 실패, 접수 확인 필요, 센서·서비스 미지원, 미연동 매장 |
 
 | 동작 | 규칙 | 신호 |
 | --- | --- | --- |
-| 웨이팅 질문 | 남은 ETA ≤ 예상 대기 − 도착 여유(10분)일 때 "42dot까지 20분, 대기는 30분이에요. 4명으로 지금 웨이팅을 걸까요?" | ETA: NaviHelper `onTripInfo` 구독 + 30초 `requestTrip` (실제) 또는 데모 입력 |
+| 웨이팅 질문 | 남은 ETA ≤ 예상 대기 − 도착 여유(10분)일 때 "42dot까지 20분, 대기는 30분이에요. 4명으로 지금 웨이팅을 걸까요?". 10초 안에 답이 없으면 접수하지 않고 닫음 | ETA: NaviHelper `onTripInfo` 구독 + 30초 `requestTrip` (실제) 또는 데모 입력 |
 | 음성 승인 | "응", "걸어 줘", "등록해 줘" 등 정해진 짧은 답만 승인. 무응답·모호한 답·만료·중복은 실행 안 함 | Pleos Speech SDK 3.3.1 ON_DEVICE (실제) |
 | 대기 허용 초과 | 예상 대기가 허용 시간보다 길면 "대기가 90분이에요. 그래도 걸까요?". 보류하면 접수·재질문·대체 추천 없음 | - |
 | 접수 안전 | 응답 유실은 "확인 필요"로 두고 다시 접수하지 않음. 방문을 끝내도 접수를 취소하지 않음 | `FakeBackend` (시연 데이터) |
+| 순정 내비 안내 종료 | 접수 전 방문만 닫고, 접수·요청 중·결과 미상인 방문은 유지. 매장 웨이팅은 취소하지 않음. 우리가 경로를 바꾸며 생긴 이전 경로의 취소는 내비의 현재 경로 상태(`RouteStateInfo`)로 가려 무시 | NaviHelper `onRouteCancelled`, `getRouteStateInfo` |
+| 방문 끝내기 | 접수했거나 결과를 모를 때는 확인창("계속 안내"/"안내 종료")을 거침. 방문 추적만 끝내고 접수 기록과 내비 경로는 건드리지 않음 | - |
 | 일부 하차 | 하차 추정 < 방문 인원이면 일부 도착으로 표시하고 도착 완료로 보지 않음 | 좌석·도어 (데모 입력) |
-| Gleo | `assets/schema.json`의 `GET_SMART_JOURNEY_STATUS`, `RESPOND_SMART_JOURNEY_PROMPT` | 스키마 등록만 확인, 자연어 왕복 미검증 |
+| Gleo | `assets/schema.json`(version 0.2.9)의 `GET_SMART_JOURNEY_STATUS`, `RESPOND_SMART_JOURNEY_PROMPT` | 에뮬레이터에서 상태 조회 왕복 확인(0.2.5). 사람 마이크로 승인하는 전체 흐름은 미검증 |
 
-화면 상단에 **"시연용 데이터 · 실제 매장 미접수"**를 항상 표시하고, 값마다 **실제 SDK / 데모 입력** 배지를 붙입니다. 서버·매장 POS는 앱 안 `FakeBackend`이며 실제 매장에 접수되지 않습니다.
+화면 상단에는 **"시연용 데이터 · 실제 매장 미접수"**를 항상 표시하고, 값마다 **실제 SDK / 데모 입력** 배지를 붙입니다. 서버·매장 POS는 앱 안의 `FakeBackend`이며, 실제 매장에는 접수되지 않습니다.
 
-검증 결과와 막힌 점(에뮬레이터에서 실시간 `onTripInfo` 미확인 등)은 [검증 기록](docs/verification/persona-v4-2026-11-12.md)에 있습니다.
+### 검증 범위와 남은 제약
+
+- 통합 검증: `./gradlew clean :app:assembleDebug :app:assembleRelease :app:testDebugUnitTest :app:lintDebug` 성공, 단위 테스트 95개 실패 0.
+- 서명된 release 0.2.9로 독립 QA(Codex)를 했습니다.
+  - 강제 권한 없는 일반 설치에서 순정 내비로 안내를 종료하면 접수 전 방문이 정리되는 것을 확인했습니다.
+  - 권한을 따로 부여한 QA 환경에서는 지도 카드 등록(시연 1명·11번 확정), 확정 뒤 내비 종료 시 접수 유지, 방문 끝내기 확인창을 확인했습니다.
+  - 자세한 내용은 [0.2.9 검증 기록](docs/verification/release-0.2.9.md)에 있습니다.
+- **미해결:**
+  - 일반 설치에서는 지도 위 카드가 뜨지 않습니다. 이 Pleos 이미지에는 "다른 앱 위에 표시" 권한 설정 화면이 없고, 백그라운드 화면 시작과 알림 배너도 막혀 있어 음성 질문이 기본 경로입니다.
+  - Gleo를 실제 마이크로 쓰는 흐름은 검증하지 못했습니다.
+  - 순정 내비가 안내를 끝내기 전에 확인창을 띄우는 공개 SDK 이벤트는 확인되지 않았습니다. 사전 확인은 앱의 "방문 끝내기"에서만 합니다.
+  - 실차 내비 값은 확인하지 못했습니다.
+- 이전 기록: [개정 기획 개발 검증](docs/verification/persona-v4-2026-11-12.md), [Gleo 시험](docs/verification/gleo-voice-test.md)
 
 ## 시연 방법
 
-1. Pleos Connect Emulator(v2.1.0)에 **디버그 APK**를 설치합니다. 데모 패널과 adb 조작은 디버그 빌드에만 있습니다.
+1. Pleos Connect Emulator(v2.1.0)에 APK를 설치합니다. 실제 신호로 시연할 때는 서명된 release APK를 일반 설치(`adb install`)합니다. 데모 패널과 adb 신호 조작이 필요하면 **디버그 APK**를 씁니다(디버그 빌드에만 있음). 지도 위 카드를 보려면 화면 상단의 "다른 앱 위 팝업 허용"으로 권한을 허용해야 하며, 이 권한 설정 화면이 없는 이미지에서는 음성 질문만 동작합니다.
 2. 동의 → 홈에서 인원·방문지·대기 허용 시간 확인 → **방문 시작**. 내비가 앞으로 나오고 2초 뒤 (데모) 주행이 시작됩니다.
 3. 데모 패널 또는 터미널로 신호를 넣습니다. 앱 사용자 ID는 10입니다.
 
@@ -60,18 +74,18 @@ adb logcat -s SJ SJ-DEMO SJ-NAVI   # 엔진·내비 로그
 
 | 경로 (`app/src/main/java/com/smartjourney/vehicle/`) | 내용 |
 | --- | --- |
-| `core/` | SDK 래퍼와 Fake. `VehicleGateway`(좌석·벨트·도어), `NaviGateway`(경로·남은 시간·도착), `DrivingStateGateway`(CarUxRestrictions) |
+| `core/` | SDK 래퍼와 Fake. `VehicleGateway`(좌석·벨트·도어), `NaviGateway`(경로·남은 시간·도착), `DrivingStateGateway`(CarUxRestrictions), `RouteCancelFilter`(순정 내비 안내 종료와 경로 교체 구분) |
 | `domain/` | 순수 Kotlin 규칙. `goldenTime`·`PromptGate`(골든타임), `AlightDetector`(하차 확인 상태 머신) |
 | `engine/` | `JourneyEngine`: 매장마다 골든타임 → 승인 → 접수 → 도착·하차 → 호출 → 착석을 진행 |
 | `service/` | `JourneyService`(포그라운드 서비스, 엔진 유지·음성 질문)와 LOW 중요도 상태 알림 |
 | `voice/` | `VoicePromptController`(읽기 후 듣기, 승인 판정), `PleosVoiceGateway`(TTS·STT), `GleoActionReceiver` |
 | `data/` | `WaitingBackend`(서버 계약)와 `FakeBackend` |
 | `demo/` | `DemoController`: 데모 신호 조작 |
-| `ui/` | 정차 화면(동의·홈·방문 현황·확인 필요), 주행 중 상태, 데모 패널 |
+| `ui/` | 정차 화면(동의·홈·방문 현황·확인 필요), 주행 중 상태, 데모 패널, 내비 위 웨이팅 카드(`MapPromptPopup`·`PromptCard`, 오버레이 권한 허용 시) |
 | `AppGraph.kt` | 객체 묶음, 실제 신호와 데모 신호 선택(`AppSignals`) |
 | `app/src/debug/` | `ProbeActivity`(SDK 신호 로그), `DemoReceiver`(터미널 조작), `SpeechProbeActivity`(합성 음성 검증). 디버그 빌드에만 들어감 |
 
-선언한 권한: `CAR_SEATS`, `CAR_DOORS`, `NAVI_ROUTE`, `NAVI_ROUTE_SEARCH`, `NAVI_CUSTOM_MAP`, `TTS_SERVICE`, `STT_SERVICE`, `POST_NOTIFICATIONS`, `FOREGROUND_SERVICE`(+`SPECIAL_USE`). 오버레이(`SYSTEM_ALERT_WINDOW`) 권한은 없습니다.
+선언한 권한: `CAR_SEATS`, `CAR_DOORS`, `NAVI_ROUTE`, `NAVI_ROUTE_SEARCH`, `NAVI_CUSTOM_MAP`, `TTS_SERVICE`, `STT_SERVICE`, `INTERNET`, `SYSTEM_ALERT_WINDOW`, `POST_NOTIFICATIONS`, `FOREGROUND_SERVICE`(+`SPECIAL_USE`). `SYSTEM_ALERT_WINDOW`은 사용자가 설정에서 허용한 경우에만 내비 위 웨이팅 카드에 씁니다. 허용하지 않아도 음성 질문과 앱 화면으로 모든 흐름을 진행할 수 있습니다.
 
 데모 패널, 1초 데모 타이머, adb 조작(`DemoReceiver`, `ProbeActivity`)은 디버그 빌드에서만 동작합니다. `FakeBackend`(앱 안 가짜 서버)는 릴리스에도 들어갑니다. 그래서 릴리스 화면에도 "시연용 데이터 · 실제 매장 미접수"를 고정 표시하며, 실서버 연동 전 빌드를 실제 접수 앱으로 설명하지 않습니다.
 
@@ -86,7 +100,8 @@ Android Studio에서 이 폴더를 열면 됩니다. 터미널에서는 다음�
 
 ```bash
 ./gradlew :app:assembleDebug        # app/build/outputs/apk/debug/
-./gradlew :app:testDebugUnitTest    # 단위 테스트 (골든타임, 하차 확인, 엔진 흐름)
+./gradlew :app:assembleRelease      # app/build/outputs/apk/release/ (서명 키가 있으면 서명됨)
+./gradlew :app:testDebugUnitTest    # 단위 테스트 (골든타임, 하차 확인, 엔진 흐름, 내비 취소 판정)
 ```
 
 **배포 빌드 서명**: 키 정보는 환경변수나 `local.properties`의 `SJ_RELEASE_STORE_FILE`, `SJ_RELEASE_STORE_PASSWORD`, `SJ_RELEASE_KEY_ALIAS`, `SJ_RELEASE_KEY_PASSWORD`에만 둡니다. 없으면 서명되지 않은 APK가 나옵니다.

@@ -1,5 +1,6 @@
 package com.smartjourney.vehicle.core
 
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -18,7 +19,7 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class RouteCancelFilterTest {
 
-    /** 내비가 답할 활성 경로 유무. null이면 답하지 않는다. */
+    /** 내비가 답할 안내 중 경로 유무. null이면 답하지 않는다. */
     private var routing: Boolean? = false
     private var queries = 0
     private var received = 0
@@ -26,7 +27,7 @@ class RouteCancelFilterTest {
     private fun TestScope.filter(subscribe: Boolean = true) = RouteCancelFilter(
         scope = backgroundScope,
         now = { testScheduler.currentTime },
-        queryRouting = {
+        queryRouteActive = {
             queries++
             routing ?: run { delay(ROUTE_STATE_TIMEOUT_MS * 10); null }
         },
@@ -128,6 +129,38 @@ class RouteCancelFilterTest {
         runCurrent()
 
         assertEquals(0, received)
+    }
+
+    @Test
+    fun 이전_요청의_상태_조회가_늦게_끝나도_새_요청이_시작됐으면_버린다() = runTest {
+        // Codex 독립 QA(RouteCancelGenerationQaTest): A 완료 → A 취소 조회 대기 → B 요청·완료 → A의 늦은 "경로 없음" 응답
+        val answer = CompletableDeferred<Boolean?>()
+        val filter = RouteCancelFilter(backgroundScope, { testScheduler.currentTime }, { answer.await() })
+        listen(filter)
+        filter.requestStarted()
+        filter.requestFinished()
+        filter.onRouteCancelled()
+        runCurrent()
+
+        filter.requestStarted()
+        filter.requestFinished()
+        answer.complete(false)
+        runCurrent()
+
+        assertEquals(0, received)
+    }
+
+    @Test
+    fun 새_요청이_시작된_뒤_온_취소는_그_요청의_세대로_처리된다() = runTest {
+        val filter = filter()
+        settleRoute(filter)
+        filter.requestStarted()
+        filter.onRouteCancelled() // B 요청 중에 온 취소(이전 경로 교체 또는 운전자)
+        routing = false
+        filter.requestFinished()
+        runCurrent()
+
+        assertEquals("B가 끝난 뒤 경로가 없으면 B의 방문에 전달돼야 한다", 1, received)
     }
 
     @Test

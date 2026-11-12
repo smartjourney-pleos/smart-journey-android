@@ -1,6 +1,7 @@
 package com.smartjourney.vehicle.core
 
 import ai.pleos.playground.navi.constants.NaviErrorCode
+import ai.pleos.playground.navi.constants.NaviMode
 import ai.pleos.playground.navi.constants.RouteOption
 import ai.pleos.playground.navi.constants.WaypointIndex
 import ai.pleos.playground.navi.data.DestinationArrivedInfo
@@ -63,7 +64,7 @@ class PleosNaviGateway(context: Context) : NaviGateway {
     private val routeChangedFlow = MutableSharedFlow<Unit>(extraBufferCapacity = 4)
     private val routeStateFlow = MutableSharedFlow<Boolean>(extraBufferCapacity = 4)
     // 이전 경로를 바꾸며 오는 취소 이벤트를 운전자의 "안내 종료"로 오인하지 않는다.
-    private val cancelFilter = RouteCancelFilter(scope, SystemClock::elapsedRealtime, ::currentlyRouting) {
+    private val cancelFilter = RouteCancelFilter(scope, SystemClock::elapsedRealtime, ::routeActive) {
         if (BuildConfig.DEBUG) Log.i("SJ-NAVI", it)
     }
 
@@ -98,9 +99,12 @@ class PleosNaviGateway(context: Context) : NaviGateway {
 
         override fun onRouteCancelled() = cancelFilter.onRouteCancelled()
 
-        // isRouting은 활성 경로 유무다. 우리가 요청하지 않은 응답(다른 앱의 조회)도 현재 상태라 같이 받는다.
+        // 우리가 요청하지 않은 응답(다른 앱의 조회)도 현재 상태라 같이 받는다.
+        // isRouting은 활성 경로 유무지만 에뮬레이터 내비는 안내 중에도 false만 보낸다. 경로 안내 모드(naviMode)도 함께 본다.
         override fun onRouteStateInfo(routeStateInfo: RouteStateInfo) {
-            routeStateFlow.tryEmit(routeStateInfo.isRouting)
+            if (BuildConfig.DEBUG) Log.i("SJ-NAVI", "onRouteStateInfo isRouting=${routeStateInfo.isRouting} naviMode=${routeStateInfo.naviMode}")
+            val guiding = routeStateInfo.naviMode == NaviMode.ROUTE_GUIDING || routeStateInfo.naviMode == NaviMode.SIMULATION_GUIDING
+            routeStateFlow.tryEmit(routeStateInfo.isRouting || guiding)
         }
 
         // 목적지 변경은 경로 교체 때도 활성 경로가 남아 상태 조회로 가릴 수 없다. 우리가 경로를 요청하는 중·직후가 아닐 때만 전달한다.
@@ -207,8 +211,8 @@ class PleosNaviGateway(context: Context) : NaviGateway {
         }
     }
 
-    /** 내비에 현재 활성 경로가 있는지 묻는다. 응답은 onRouteStateInfo로 온다. 조회하지 못하면 null. */
-    private suspend fun currentlyRouting(): Boolean? = try {
+    /** 내비에 지금 안내 중인 경로가 있는지 묻는다. 응답은 onRouteStateInfo로 온다. 조회하지 못하면 null. */
+    private suspend fun routeActive(): Boolean? = try {
         routeStateFlow.onSubscription { navi.getRouteStateInfo() }.first()
     } catch (error: CancellationException) {
         throw error
