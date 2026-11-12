@@ -78,6 +78,7 @@ class JourneyService : Service() {
         // 주행 중 결정은 음성으로만 한다 (명세서 v4 5장). 승인 화면·헤드업·오버레이를 띄우지 않는다.
         scope.launch {
             val controller = VoicePromptController(voice, { engine.state.value.prompt }, graph::respondByVoice,
+                onSpoken = { graph.spokenPromptId.value = it },
                 onUnavailable = {
                     graph.voiceIssue.value = it
                     Notices.voiceUnavailable(this@JourneyService, it)

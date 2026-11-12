@@ -50,6 +50,8 @@ class VoicePromptController(
     private val respond: (String, VoiceDecision) -> Boolean,
     private val onUnavailable: (VoiceIssue) -> Unit,
     private val now: () -> Long = System::currentTimeMillis,
+    /** 질문을 끝까지 읽었다. Gleo로 오는 승인은 사용자가 실제로 들은 질문에만 적용한다. */
+    private val onSpoken: (String) -> Unit = {},
 ) {
     private fun isCurrent(prompt: Prompt) = currentPrompt()?.id == prompt.id &&
         (prompt.expiresAt == null || now() < prompt.expiresAt)
@@ -58,6 +60,7 @@ class VoicePromptController(
         try {
             if (!isCurrent(prompt)) return
             if (voice.speak(prompt.spokenText()).isFailure) { onUnavailable(VoiceIssue.SPEECH_UNAVAILABLE); return }
+            onSpoken(prompt.id)
             repeat(2) { attempt ->
                 if (!isCurrent(prompt)) return
                 val result = withTimeoutOrNull(10_000) { voice.listen() }

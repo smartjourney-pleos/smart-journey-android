@@ -125,6 +125,9 @@ class AppGraph(private val context: Context) {
     /** Gleo가 현재 질문을 맡으면 앱의 STT가 Gleo의 마이크를 가로채지 않는다. */
     val gleoPromptId = MutableStateFlow<String?>(null)
 
+    /** 앱 음성으로 끝까지 읽어 준 마지막 질문. Gleo 승인은 앱 음성이나 Gleo가 읽어 준 질문에만 적용한다. */
+    val spokenPromptId = MutableStateFlow<String?>(null)
+
     init {
         if (consented.value) {
             val restored = engine.restore()

@@ -73,22 +73,21 @@ class GleoActionReceiver : BroadcastReceiver() {
         }
         // 승인은 Gleo로 방금 읽어 준 질문(앱이 기억한 ID)에만 적용한다. 언어 모델이 넘기는 질문 ID는 쓰지 않는다:
         // 에뮬레이터에서 Gleo가 실제 ID 대신 "42dot_waiting_prompt" 같은 값을 지어내 보낸 것을 확인했다.
-        // 질문은 앱 음성 또는 Gleo로 이미 읽어 줬다. Gleo는 짧은 후속 답("네")을 일상 대화로 분류해 이 함수를 부르지 않으므로
-        // 사용자는 "스마트 저니 등록해 줘"처럼 앱 이름을 넣어 명시적으로 답한다(에뮬레이터 AGENTCLASSIFIER 확인).
-        val asked = graph.gleoPromptId.value
-        if (decision == null) {
-            graph.gleoPromptId.value = prompt.id
-            ask(context, RESPOND, prompt)
-            return
-        }
-        if (asked != null && asked != prompt.id) {
-            // 읽어 준 뒤 질문이 바뀌었다(만료 후 새 질문 등). 이전 답을 새 질문에 쓰지 않고 새 질문을 읽게 한다.
+        // 승인은 사용자가 실제로 들은 질문에만 적용한다: Gleo가 읽어 준 질문(asking 응답) 또는 앱 음성으로 끝까지 읽은 질문.
+        // 언어 모델이 넘기는 질문 ID는 쓰지 않는다(에뮬레이터에서 "42dot_waiting_prompt"처럼 지어낸 값을 보냈다).
+        // 짧은 "네"는 Gleo가 일상 대화로 분류하므로 사용자는 "스마트 저니 등록해 줘"처럼 앱 이름을 넣어 답한다.
+        val heard = graph.gleoPromptId.value == prompt.id || graph.spokenPromptId.value == prompt.id
+        if (decision == null || !heard) {
+            // 답이 모호하거나 이 질문을 들려준 적이 없다(질문이 바뀐 경우 포함). 실행하지 않고 질문을 읽게 한다.
             graph.gleoPromptId.value = prompt.id
             ask(context, RESPOND, prompt)
             return
         }
         val id = prompt.id
         val storeId = graph.engine.state.value.current?.store?.id
+        // 한 번 쓴 근거로 다음 질문을 승인하지 않도록 지운다.
+        graph.gleoPromptId.value = null
+        graph.spokenPromptId.value = null
         if (!graph.respondByVoice(id, decision)) {
             reply(context, RESPOND, "fail", "The question has expired or has already been answered.")
             return
@@ -115,13 +114,13 @@ class GleoActionReceiver : BroadcastReceiver() {
         }
     }
 
+    // 지시문은 고정 문장이다. 매장 이름 등 외부 데이터는 지시문에 넣지 않고 data.question으로만 넘긴다.
     private fun ask(context: Context, action: String, prompt: Prompt) = reply(context, action, "asking",
-        // Gleo가 "알겠습니다"로만 답하고 함수를 부르지 않는 경우를 에뮬레이터에서 확인했다. 다음 호출을 명시한다.
-        "Read this question to the user in Korean exactly: ${prompt.spokenText()} 답은 스마트 저니 등록해 줘, 또는 스마트 저니 나중에라고 말씀해 주세요. " +
-            "When the user answers yes (for example 응, 네, 걸어 줘), call $RESPOND with decision approve. " +
-            "When the user answers no or later (for example 아니, 나중에), call $RESPOND with decision defer. " +
+        "Read the question in data.question to the user in Korean exactly. " +
+            "Then tell the user to answer by saying 스마트 저니 등록해 줘 or 스마트 저니 나중에. " +
+            "When the user approves, call $RESPOND with decision approve. When the user declines or says later, call $RESPOND with decision defer. " +
             "Do not say it is done before $RESPOND returns success.",
-        JSONObject().put("question", prompt.spokenText()))
+        JSONObject().put("question", prompt.spokenText().filterNot { it.isISOControl() }.take(200)))
 
     private fun parameters(intent: Intent): JSONObject {
         val raw = intent.getStringExtra("ACTION_PARAM")
