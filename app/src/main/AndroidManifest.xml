@@ -58,6 +58,9 @@
             android:exported="true"
             android:permission="ai.umos.gleo.permission.APP_ACTION">
             <intent-filter>
+                <!-- Gleo AI는 "<패키지명>.<function 이름>"으로 보낸다. 문서 예시의 이름만 오는 형태도 함께 받는다. -->
+                <action android:name="com.smartjourney.vehicle.GET_SMART_JOURNEY_STATUS" />
+                <action android:name="com.smartjourney.vehicle.RESPOND_SMART_JOURNEY_PROMPT" />
                 <action android:name="GET_SMART_JOURNEY_STATUS" />
                 <action android:name="RESPOND_SMART_JOURNEY_PROMPT" />
                 <category android:name="android.intent.category.DEFAULT" />

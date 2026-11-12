@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.util.Log
 import com.smartjourney.vehicle.AppGraph
+import com.smartjourney.vehicle.BuildConfig
 import com.smartjourney.vehicle.engine.Prompt
 import com.smartjourney.vehicle.engine.StopPhase
 import com.smartjourney.vehicle.engine.statusLine
@@ -20,7 +21,9 @@ import org.json.JSONTokener
 /** Gleo Interface의 component=service는 Service 실행이 아니라 Broadcast다. UI를 열지 않는다. */
 class GleoActionReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        val action = intent.action ?: return
+        // Gleo AI 4.2.0.15는 "<패키지명>.<function 이름>"으로 보낸다(에뮬레이터 AppActionViewModel.sendActionCall 확인).
+        // 문서 예시처럼 이름만 오는 경우도 받는다. 응답의 functionName은 스키마의 function 이름을 쓴다.
+        val action = intent.action?.removePrefix("${context.packageName}.") ?: return
         if (action != STATUS && action != RESPOND) return
         val pending = goAsync()
         val graph = context.graph
@@ -63,22 +66,28 @@ class GleoActionReceiver : BroadcastReceiver() {
             reply(context, RESPOND, "fail", "There is no pending question to answer.")
             return
         }
-        val id = parameters.optString("promptId")
         val decision = when (parameters.optString("decision")) {
             "approve" -> VoiceDecision.APPROVE
             "defer" -> VoiceDecision.DEFER
             else -> null
         }
-        if (id.isBlank() || decision == null) {
+        // 승인은 Gleo로 방금 읽어 준 질문(앱이 기억한 ID)에만 적용한다. 언어 모델이 넘기는 질문 ID는 쓰지 않는다:
+        // 에뮬레이터에서 Gleo가 실제 ID 대신 "42dot_waiting_prompt" 같은 값을 지어내 보낸 것을 확인했다.
+        // 질문은 앱 음성 또는 Gleo로 이미 읽어 줬다. Gleo는 짧은 후속 답("네")을 일상 대화로 분류해 이 함수를 부르지 않으므로
+        // 사용자는 "스마트 저니 등록해 줘"처럼 앱 이름을 넣어 명시적으로 답한다(에뮬레이터 AGENTCLASSIFIER 확인).
+        val asked = graph.gleoPromptId.value
+        if (decision == null) {
             graph.gleoPromptId.value = prompt.id
             ask(context, RESPOND, prompt)
             return
         }
-        if (id != prompt.id) {
-            reply(context, RESPOND, "fail", "The question has changed. The previous answer was not applied.")
+        if (asked != null && asked != prompt.id) {
+            // 읽어 준 뒤 질문이 바뀌었다(만료 후 새 질문 등). 이전 답을 새 질문에 쓰지 않고 새 질문을 읽게 한다.
+            graph.gleoPromptId.value = prompt.id
+            ask(context, RESPOND, prompt)
             return
         }
-        graph.gleoPromptId.value = prompt.id
+        val id = prompt.id
         val storeId = graph.engine.state.value.current?.store?.id
         if (!graph.respondByVoice(id, decision)) {
             reply(context, RESPOND, "fail", "The question has expired or has already been answered.")
@@ -107,8 +116,12 @@ class GleoActionReceiver : BroadcastReceiver() {
     }
 
     private fun ask(context: Context, action: String, prompt: Prompt) = reply(context, action, "asking",
-        "An explicit voice response is required for the current question.",
-        JSONObject().put("promptId", prompt.id).put("question", prompt.spokenText()))
+        // Gleo가 "알겠습니다"로만 답하고 함수를 부르지 않는 경우를 에뮬레이터에서 확인했다. 다음 호출을 명시한다.
+        "Read this question to the user in Korean exactly: ${prompt.spokenText()} 답은 스마트 저니 등록해 줘, 또는 스마트 저니 나중에라고 말씀해 주세요. " +
+            "When the user answers yes (for example 응, 네, 걸어 줘), call $RESPOND with decision approve. " +
+            "When the user answers no or later (for example 아니, 나중에), call $RESPOND with decision defer. " +
+            "Do not say it is done before $RESPOND returns success.",
+        JSONObject().put("question", prompt.spokenText()))
 
     private fun parameters(intent: Intent): JSONObject {
         val raw = intent.getStringExtra("ACTION_PARAM")
@@ -125,6 +138,7 @@ class GleoActionReceiver : BroadcastReceiver() {
     }
 
     private fun reply(context: Context, action: String, status: String, message: String, data: JSONObject? = null) {
+        if (BuildConfig.DEBUG) Log.i("GleoAction", "$action → $status") // 발화·질문 내용은 남기지 않는다
         val response = JSONObject().put("functionName", action).put("status", status)
             .put("message", message).put("mode", "voice")
         data?.let { response.put("data", JSONArray().put(it).toString()) }

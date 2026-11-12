@@ -16,8 +16,8 @@ android {
         minSdk = 28 // Vehicle SDK 최소 요구 (Pleos 문서: API 28 이상)
         targetSdk = 34
         // 심사 요청·배포 때마다 반드시 올린다 (Pleos 앱 버전 관리 정책). Gleo schema.json의 version과 맞춘다.
-        versionCode = 6
-        versionName = "0.2.4"
+        versionCode = 7
+        versionName = "0.2.5"
         buildConfigField("String", "VEHICLE_SDK_VERSION", "\"${libs.versions.pleosVehicle.get()}\"")
         buildConfigField("String", "NAVI_SDK_VERSION", "\"${libs.versions.pleosNaviHelper.get()}\"")
     }
