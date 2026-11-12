@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.smartjourney.vehicle.AppGraph
+import com.smartjourney.vehicle.BuildConfig
 import com.smartjourney.vehicle.engine.JourneyState
 
 /**
@@ -38,7 +39,9 @@ fun DemoPanel(graph: AppGraph, journey: JourneyState, modifier: Modifier = Modif
     val remaining by demo.remainingSec.collectAsStateWithLifecycle()
     val speed by demo.speed.collectAsStateWithLifecycle()
     val realEta by demo.realEta.collectAsStateWithLifecycle()
-    val received by graph.backend.received.collectAsStateWithLifecycle()
+    val fake = graph.backend.fake
+    val received by fake.received.collectAsStateWithLifecycle()
+    val useServer by graph.useServer.collectAsStateWithLifecycle()
 
     val store = journey.current?.store
     val storeId = store?.id ?: 1L
@@ -106,21 +109,35 @@ fun DemoPanel(graph: AppGraph, journey: JourneyState, modifier: Modifier = Modif
             }
         }
 
+        Section("접수 백엔드") {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Switch(
+                    checked = useServer, enabled = !journey.active && graph.backend.server != null,
+                    onCheckedChange = { graph.setUseServer(it) },
+                )
+                Text(if (useServer) "서버 연동 (${BuildConfig.SERVER_URL})" else "앱 안 시연 데이터", fontSize = 20.sp, color = Palette.DemoInk)
+            }
+            Text(
+                if (useServer) "매장 대기·호출·착석은 웹 POS(smart-journey-web)에서 조작해요" else "방문 중에는 바꿀 수 없어요",
+                fontSize = 18.sp, color = Palette.DemoInk,
+            )
+        }
+
         Section("매장 (POS 역할)") {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
                     "${store?.name ?: "첫 데모 장소"} 현장 ${queue?.aheadTeams ?: 0}팀 · ${queue?.estimatedWaitMin ?: 0}분",
                     Modifier.weight(1f), fontSize = 22.sp, fontWeight = FontWeight.SemiBold,
                 )
-                SmallButton("−1", { graph.backend.addWalkIn(storeId, -1) })
-                SmallButton("+1", { graph.backend.addWalkIn(storeId, 1) })
+                SmallButton("−1", { fake.addWalkIn(storeId, -1) }, enabled = !useServer)
+                SmallButton("+1", { fake.addWalkIn(storeId, 1) }, enabled = !useServer)
             }
             Buttons {
-                SmallButton("대기 90분 만들기", { graph.backend.addWalkIn(storeId, 18 - (queue?.aheadTeams ?: 0)) }, Modifier.weight(1f))
+                SmallButton("대기 90분 만들기", { fake.addWalkIn(storeId, 18 - (queue?.aheadTeams ?: 0)) }, Modifier.weight(1f), !useServer)
             }
             Buttons {
-                SmallButton("점주 호출", { waitingId?.let(graph.backend::call) }, Modifier.weight(1f), waitingId != null)
-                SmallButton("착석 처리", { waitingId?.let(graph.backend::seat) }, Modifier.weight(1f), waitingId != null)
+                SmallButton("점주 호출", { waitingId?.let(fake::call) }, Modifier.weight(1f), waitingId != null && !useServer)
+                SmallButton("착석 처리", { waitingId?.let(fake::seat) }, Modifier.weight(1f), waitingId != null && !useServer)
             }
         }
 

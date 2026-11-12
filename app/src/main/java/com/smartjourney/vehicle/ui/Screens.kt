@@ -26,6 +26,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.VerticalDivider
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -64,6 +65,7 @@ import com.smartjourney.vehicle.engine.text
 import com.smartjourney.vehicle.voice.VoiceIssue
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
 
 /** 정차 중 화면의 탭. 주행 음성 흐름(핵심 화면 3)은 화면이 없다. */
@@ -83,22 +85,26 @@ fun AppRoot(graph: AppGraph) {
         BoxWithConstraints(Modifier.fillMaxSize()) {
             val wide = maxWidth >= 1400.dp
             val main: @Composable (Modifier) -> Unit = { modifier ->
-                Column(modifier) {
+                BoxWithConstraints(modifier) {
+                CompositionLocalProvider(LocalCompact provides (maxWidth < 1000.dp)) {
+                Column(Modifier.fillMaxSize()) {
                     TopBar(restricted, showDemo, onToggleDemo = { showDemo = !showDemo })
                     when {
-                        restricted -> Page { DrivingScreen(journey, consented) }
-                        !consented -> Page { ConsentScreen(graph) }
+                        restricted -> Page(Modifier.weight(1f)) { DrivingScreen(journey, consented) }
+                        !consented -> Page(Modifier.weight(1f), scroll = false) { ConsentScreen(graph) }
                         else -> {
                             Tabs(tab, issues.size, onSelect = { tab = it })
                             when (tab) {
                                 Tab.HOME -> HomeScreen(graph, journey, onShowStatus = { tab = Tab.STATUS }, modifier = Modifier.weight(1f))
-                                Tab.STATUS -> Page(Modifier.weight(1f)) { StatusScreen(graph, journey) }
+                                Tab.STATUS -> Page(Modifier.weight(1f), scroll = false) { StatusScreen(graph, journey) }
                                 Tab.ISSUES -> Page(Modifier.weight(1f)) { IssuesScreen(graph, issues) }
                             }
                         }
                     }
                 }
             }
+                }
+                }
             val demoVisible = BuildConfig.DEBUG && showDemo
             if (wide) {
                 Row(Modifier.fillMaxSize()) {
@@ -122,9 +128,9 @@ fun AppRoot(graph: AppGraph) {
 }
 
 @Composable
-private fun Page(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+private fun Page(modifier: Modifier = Modifier, scroll: Boolean = true, content: @Composable ColumnScope.() -> Unit) {
     Column(
-        modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(PleosSpace.Page),
+        modifier.fillMaxWidth().then(if (scroll) Modifier.verticalScroll(rememberScrollState()) else Modifier).padding(PleosSpace.Page),
         verticalArrangement = Arrangement.spacedBy(PleosSpace.Section), content = content,
     )
 }
@@ -136,13 +142,13 @@ private fun TopBar(restricted: Boolean, showDemo: Boolean, onToggleDemo: () -> U
     Surface(color = Palette.Surface) {
         Column {
             FlowRow(
-                Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp),
+                Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp),
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text("스마트 저니", style = Type.Title)
-                    Text(if (restricted) "주행 규제 중 · 음성 안내" else "방문 준비 · 결과 확인", style = Type.Caption)
+                    if (!LocalCompact.current) Text(if (restricted) "주행 규제 중 · 음성 안내" else "방문 준비 · 결과 확인", style = Type.Caption)
                 }
                 Badge("시연용 데이터 · 실제 매장 미접수", Palette.Orange)
                 if (restricted) Badge("주행 규제 적용 중", Palette.Orange)
@@ -158,7 +164,7 @@ private fun TopBar(restricted: Boolean, showDemo: Boolean, onToggleDemo: () -> U
 private fun Tabs(selected: Tab, issueCount: Int, onSelect: (Tab) -> Unit) {
     Surface(color = Palette.Surface) {
         Column {
-            FlowRow(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Tab.entries.forEach { tab ->
                     val label = if (tab == Tab.ISSUES && issueCount > 0) "${tab.label} ${issueCount}건" else tab.label
                     val on = tab == selected
@@ -185,40 +191,28 @@ private fun SourceBadge(real: Boolean, label: String) =
 
 // ---------- 핵심 1. 동의 V-00 ----------
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ConsentScreen(graph: AppGraph) {
     val support by graph.signals.support.collectAsStateWithLifecycle()
     var later by rememberSaveable { mutableStateOf(false) }
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("시작하기 전에", style = Type.Label)
-        Text("도착 시각에 맞춰\n방문을 준비해요", style = Type.Headline)
+    Text("도착에 맞춰 방문을 준비해요", style = Type.Headline)
+    Text("도착 예상과 대기를 비교하고, 승인한 접수만 요청해요.", style = Type.Body)
+    Panel {
+        Text("데이터 이용 안내", style = Type.Title)
+        Text("항목: 매장 식별자·도착 예상·방문 인원·접수 상태·하차 추정", style = Type.Body)
+        Text("위치 좌표·이동 경로·차대번호는 보내지 않아요.", style = Type.Label)
+        Text("수신처: 스마트 저니 서버·접수한 매장\n보관: ${RETENTION_DAYS}일 후 삭제", style = Type.Label)
+        Text("현재는 시연용 접수이며 실제 매장에는 접수되지 않아요.", style = Type.Caption)
+        Text("거부해도 내비는 이용할 수 있어요. 홈에서 동의를 철회할 수 있어요.", style = Type.Label)
     }
     Panel {
-        Text("왜 필요한가요", style = Type.Title)
-        Text("도착까지 남은 시간과 매장 대기를 비교해 웨이팅을 걸 시점을 알려 드리고, 승인한 접수만 매장에 보내요.", style = Type.Body)
-        HorizontalDivider(color = Palette.Line)
-        Text("보내는 정보", style = Type.Title)
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            listOf("매장 식별자", "도착 예상 시간", "방문 인원", "접수 상태", "하차 추정 인원").forEach { Badge(it, Palette.Gray) }
-        }
-        Text("위치 좌표·이동 경로·차대번호는 보내지 않아요", style = Type.Body)
-        Text("받는 곳: 스마트 저니 서버 · 접수한 매장 · 보관: ${RETENTION_DAYS}일 뒤 삭제", style = Type.Label)
-        Text("동의하지 않아도 내비는 그대로 쓸 수 있어요. 동의는 홈 아래에서 언제든 철회할 수 있어요.", style = Type.Label)
-    }
-    Panel {
-        Text("이 차량에서 쓸 수 있는 기능", style = Type.Title)
-        val s = support
-        if (s == null) Text("차량 기능을 확인하고 있어요", style = Type.Label)
-        else {
-            Text("좌석 점유: ${if (s.seat) "지원" else "미지원 · 인원을 직접 입력해요"}", style = Type.Body)
-            Text("도어 상태: ${if (s.door) "지원" else "미지원 · 하차는 직접 확인해요"}", style = Type.Body)
-            Text("주행 규제 상태: ${if (s.drivingState) "지원" else "미지원 · 항상 주행 중으로 취급해요"}", style = Type.Body)
-        }
+        Text("차량 기능", style = Type.Title)
+        Text(support?.let { "좌석 ${if (it.seat) "지원" else "미지원"} · 도어 ${if (it.door) "지원" else "미지원"} · 주행 규제 ${if (it.drivingState) "지원" else "미지원"}" } ?: "차량 기능 확인 중", style = Type.Label)
+        Text("좌석 미지원 시 인원을 직접 입력해요. 규제 상태가 불명이면 조작을 제한해요.", style = Type.Caption)
     }
     BigButton("동의하고 시작", { graph.setConsent(true) }, Modifier.fillMaxWidth())
-    BigButton("나중에", { later = true }, Modifier.fillMaxWidth(), primary = false)
-    if (later) Text("동의하기 전에는 웨이팅을 준비할 수 없어요", style = Type.Caption)
+    SmallButton("나중에", { later = true }, Modifier.fillMaxWidth())
+    if (later) Text("동의 전에는 접수를 준비하지 않아요. 내비는 그대로 이용해 주세요.", style = Type.Label)
 }
 
 // ---------- 핵심 2. 홈(방문 계획) V-02 ----------
@@ -226,7 +220,11 @@ private fun ConsentScreen(graph: AppGraph) {
 @OptIn(FlowPreview::class)
 @Composable
 private fun HomeScreen(graph: AppGraph, journey: JourneyState, onShowStatus: () -> Unit, modifier: Modifier = Modifier) {
-    val stores by produceState(emptyList<Store>()) { value = graph.backend.stores() }
+    // 데모 패널에서 접수 백엔드(앱 안 데이터 ↔ 서버)를 바꾸면 매장 목록을 다시 읽는다. 서버 오류면 빈 목록이다.
+    val useServer by graph.useServer.collectAsStateWithLifecycle()
+    val stores by remember(useServer) {
+        flow { emit(runCatching { graph.backend.stores() }.getOrDefault(emptyList())) }
+    }.collectAsStateWithLifecycle(initialValue = emptyList())
     val useDemo by graph.demo.enabled.collectAsStateWithLifecycle()
     val support by graph.signals.support.collectAsStateWithLifecycle()
     val waitLimit by graph.waitLimitMin.collectAsStateWithLifecycle()
@@ -239,88 +237,61 @@ private fun HomeScreen(graph: AppGraph, journey: JourneyState, onShowStatus: () 
     val suggestion = sensed?.takeIf { it > 0 && (useDemo || support?.seat == true) }
     val party = manual ?: suggestion
 
-    Column(modifier.fillMaxWidth()) {
-        Page(Modifier.weight(1f)) {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("방문 계획", style = Type.Label)
-                Text("도착에 맞춰 방문을 준비해요", style = Type.Headline)
-            }
-            if (journey.active) CurrentVisitCard(graph, journey, onShowStatus)
-
-            BoxWithConstraints(Modifier.fillMaxWidth()) {
-                val people: @Composable () -> Unit = {
+    Column(modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("방문 계획", style = Type.Headline)
+        if (journey.active) {
+            CurrentVisitCard(graph, journey, onShowStatus)
+            Text("방문 중에는 현황에서 결과와 다음 행동을 확인해 주세요.", style = Type.Label)
+        } else {
+            BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+                val settings: @Composable () -> Unit = {
                     Panel {
                         Text("방문 인원", style = Type.Title)
-                        Text(
-                            suggestion?.let { "탑승 인원 제안 ${it}명 · 방문 인원을 확인해 주세요" }
-                                ?: when {
-                                    !useDemo && support?.seat == false -> "좌석 센서를 지원하지 않아요 · 직접 입력해 주세요"
-                                    sensed == 0 -> "좌석에서 감지한 인원이 없어요 · 직접 입력해 주세요"
-                                    else -> "좌석을 확인하고 있어요"
-                                },
-                            style = Type.Label,
-                        )
-                        PartyStepper(party, onChange = { manual = it })
-                        Text(if (manual != null) "직접 정한 인원이에요" else "짐·아이 좌석이 인원으로 잡힐 수 있어요", style = Type.Caption)
-                        SourceBadge(real = !useDemo, label = "좌석 점유")
-                    }
-                }
-                val limit: @Composable () -> Unit = {
-                    Panel {
-                        Text("대기 허용 시간", style = Type.Title)
-                        Text("대기 ${waitLimit}분까지 기다려요", style = Type.Body)
-                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            SmallButton("−10분", { graph.setWaitLimit(waitLimit - 10) }, enabled = waitLimit > 10)
-                            SmallButton("+10분", { graph.setWaitLimit(waitLimit + 10) }, enabled = waitLimit < 120)
+                        Text(suggestion?.let { "탑승 인원 제안 ${it}명 · 확인해 주세요" }
+                            ?: if (sensed == 0) "감지 인원 없음 · 직접 입력해 주세요" else if (!useDemo && support?.seat == false) "좌석 미지원 · 직접 입력해 주세요" else "좌석 확인 중 · 직접 입력할 수 있어요", style = Type.Label)
+                        PartyStepper(party, { manual = it })
+                        SourceBadge(!useDemo, "좌석")
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("대기 ${waitLimit}분까지", Modifier.weight(1f), style = Type.Body)
+                            SmallButton("−", { graph.setWaitLimit(waitLimit - 10) }, enabled = waitLimit > 10)
+                            SmallButton("+", { graph.setWaitLimit(waitLimit + 10) }, enabled = waitLimit < 120)
                         }
-                        Text("예상 대기가 이보다 길면 대기 시간을 알리고 접수 여부를 물어요", style = Type.Caption)
                     }
                 }
-                if (maxWidth >= 1100.dp) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(32.dp)) {
-                        Column(Modifier.weight(1f)) { people() }
-                        Column(Modifier.weight(1f)) { limit() }
+                val destinations: @Composable () -> Unit = {
+                    Panel {
+                        Text("방문지 · ${picked.size}곳 / 최대 3곳", style = Type.Title)
+                        if (stores.isEmpty()) Text("방문지 정보를 불러오는 중이에요", style = Type.Label)
+                        stores.forEach { store ->
+                            val order = picked.indexOf(store.id)
+                            StoreRow(graph, store, order, waitLimit, enabled = picked.size < 3 || order >= 0) {
+                                picked = if (order >= 0) picked - store.id else picked + store.id
+                            }
+                        }
                     }
-                } else Column(verticalArrangement = Arrangement.spacedBy(32.dp)) { people(); limit() }
+                }
+                if (maxWidth >= 1000.dp) Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                    Column(Modifier.weight(0.85f)) { settings() }
+                    Column(Modifier.weight(1.15f)) { destinations() }
+                } else Column(verticalArrangement = Arrangement.spacedBy(12.dp)) { settings(); destinations() }
             }
-
-            Panel {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("방문지 · 지원 방식", Modifier.weight(1f), style = Type.Title)
-                    Text("${picked.size}곳 / 최대 3곳", style = Type.Label)
-                }
-                Text("방문할 순서대로 골라 주세요. 목록에 없는 매장은 접수를 지원하지 않아요.", style = Type.Caption)
-                stores.forEach { store ->
-                    val order = picked.indexOf(store.id)
-                    StoreRow(graph, store, order, waitLimit, enabled = !journey.active && (picked.size < 3 || order >= 0)) {
-                        picked = if (order >= 0) picked - store.id else picked + store.id
-                    }
-                }
-            }
-        }
-        if (!journey.active) Surface(color = Palette.Surface) {
-            Column(Modifier.fillMaxWidth().padding(horizontal = 40.dp, vertical = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                val names = picked.mapNotNull { id -> stores.find { it.id == id }?.name }
-                if (names.isNotEmpty()) Text("${names.joinToString(" → ")} · ${party ?: "–"}명 · 웨이팅 연동(데모) · 순정 내비로 안내", style = Type.Label)
-                startError?.let { Text(it, style = Type.Body, color = Palette.Red) }
-                BigButton(
-                    text = if (starting) "내비에 경로를 넣는 중…" else "방문 시작",
-                    onClick = {
-                        val stops = picked.mapNotNull { id -> stores.find { it.id == id } }
+            Surface(color = Palette.Surface, shape = RoundedCornerShape(20.dp)) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("${picked.size}곳 · ${party?.let { "${it}명" } ?: "인원 선택 필요"} · 웨이팅 데모 · 순정 내비 안내", style = Type.Label)
+                    startError?.let { Text(it, style = Type.Caption, color = Palette.Red) }
+                    BigButton(if (starting) "내비 연결 중…" else "방문 시작", {
                         starting = true
-                        // 내비가 앞으로 나오면서 이 화면이 멈춰도 끝까지 진행되도록 앱 범위에서 돌린다
+                        val stops = picked.mapNotNull { id -> stores.find { it.id == id } }
                         graph.scope.launch {
                             val result = graph.startJourney(party ?: 1, stops)
                             starting = false
                             if (result.isFailure && graph.startError.value == null) graph.startError.value = result.exceptionOrNull()?.message
                         }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = party != null && picked.isNotEmpty() && !starting,
-                )
-                TextButton({ graph.setConsent(false) }) { Text("데이터 전송 동의 철회", fontSize = 20.sp, color = Palette.Muted) }
+                    }, Modifier.fillMaxWidth(), enabled = party != null && picked.isNotEmpty() && !starting)
+                }
             }
         }
+        TextButton({ graph.setConsent(false) }) { Text("데이터 전송 동의 철회", style = Type.Caption) }
     }
 }
 
@@ -352,34 +323,15 @@ private fun StoreRow(graph: AppGraph, store: Store, order: Int, waitLimit: Int, 
     val queue by remember(store.id) { graph.backend.queueStatus(store.id) }.collectAsStateWithLifecycle(initialValue = null)
     val selected = order >= 0
     Surface(
-        modifier = Modifier.fillMaxWidth().toggleable(value = selected, enabled = enabled, role = Role.Checkbox, onValueChange = { onClick() }),
-        shape = RoundedCornerShape(24.dp),
-        color = if (selected) Palette.Button else Palette.Surface,
+        Modifier.fillMaxWidth().toggleable(selected, enabled = enabled, role = Role.Checkbox) { onClick() },
+        shape = RoundedCornerShape(16.dp), color = if (selected) Palette.Button else Palette.Surface,
         border = BorderStroke(2.dp, if (selected) Palette.Primary else Palette.Line),
     ) {
-        Row(
-            Modifier.fillMaxWidth().heightIn(min = 128.dp).padding(24.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(24.dp),
-        ) {
-            Surface(Modifier.size(56.dp), shape = RoundedCornerShape(16.dp), color = if (selected) Palette.Primary else Palette.Button) {
-                Box(contentAlignment = Alignment.Center) {
-                    if (selected) Text("${order + 1}", style = Type.Title, color = Palette.OnPrimary)
-                    else Icon(painterResource(R.drawable.pleos_plus), null, Modifier.size(44.dp), tint = Palette.Ink)
-                }
-            }
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(store.name, style = Type.Title)
-                Text(store.address, style = Type.Caption)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Badge("웨이팅 연동 · 데모", Palette.Blue)
-                    Badge("예약·전화 미지원", Palette.Gray)
-                }
-                if (queue == null) Text("대기정보 없음 · 확인 중", style = Type.Label)
-                queue?.let {
-                    Text(waitText(it), style = Type.Label.copy(color = if (it.estimatedWaitMin > waitLimit) Palette.Orange else Palette.Gray))
-                }
-            }
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("${if (selected) "${order + 1}번째 · " else "○ "}${store.name}", style = Type.Title)
+            Text("웨이팅 연동 · 데모 · 예약/전화 미지원", style = Type.Caption, color = Palette.Blue)
+            Text(queue?.let { waitText(it) } ?: "대기정보 없음", style = Type.Label,
+                color = if ((queue?.estimatedWaitMin ?: 0) > waitLimit) Palette.Orange else Palette.Muted)
         }
     }
 }
@@ -395,78 +347,110 @@ private fun waitText(queue: QueueStatus) = when {
 @Composable
 private fun StatusScreen(graph: AppGraph, journey: JourneyState) {
     val etaSource by graph.signals.etaSource.collectAsStateWithLifecycle()
+    val useDemo by graph.demo.enabled.collectAsStateWithLifecycle()
     val stop = journey.current
+    var expanded by rememberSaveable { mutableStateOf(false) }
     if (stop == null) {
         Panel {
             Text("진행 중인 방문이 없어요", style = Type.Title)
-            Text("홈에서 방문지를 고르고 방문을 시작해 주세요", style = Type.Body)
+            Text("홈에서 방문지·인원을 고르고 시작해 주세요.", style = Type.Body)
         }
         return
     }
-    Text("방문 현황 · 방문 인원 ${journey.partySize}명 · 대기 허용 ${journey.waitLimitMin}분${if (!journey.active) " · 종료됨" else ""}", style = Type.Label)
-    Panel {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            Text(stop.store.name, Modifier.weight(1f), style = Type.Title)
-            SubmissionBadge(stop)
+    val waiting = stop.waiting
+    val waitMin = waiting?.estimatedWaitMin ?: journey.queue?.estimatedWaitMin
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.weight(1f)) {
+            Text(stop.store.name, style = Type.Title)
+            Text("웨이팅 연동 · 시연용 접수", style = Type.Caption)
         }
-        Text(journey.statusLine().substringAfter(" · "), style = Type.Body)
-        FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            TimeBlock(journey.remainingMin?.toString() ?: "–", "분", "도착 예상", Modifier.width(220.dp))
-            val waiting = stop.waiting
-            if (waiting == null) {
-                TimeBlock(journey.queue?.estimatedWaitMin?.toString() ?: "–", "분", "예상 대기", Modifier.width(220.dp))
-                TimeBlock(journey.minutesUntilPrompt?.toString() ?: "–", "분", "질문까지", Modifier.width(220.dp))
-            } else {
-                // 번호는 접수 응답을 받은 뒤에만 보인다
-                TimeBlock(waiting.ticketNo.toString(), "번", "접수 번호", Modifier.width(220.dp))
-                TimeBlock(waiting.aheadTeams.toString(), "팀", "앞에", Modifier.width(220.dp))
+        SubmissionBadge(stop)
+    }
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val summary: @Composable () -> Unit = {
+            Panel {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    TimeBlock(journey.remainingMin?.toString() ?: "–", "분", "도착 예상", Modifier.weight(1f))
+                    TimeBlock(waiting?.ticketNo?.toString() ?: "–", "번", "접수 번호", Modifier.weight(1f))
+                    TimeBlock((waiting?.aheadTeams ?: journey.queue?.aheadTeams)?.toString() ?: "–", "팀", "앞 팀", Modifier.weight(1f))
+                }
+                ProgressSteps(stop)
+                Text("${waiting?.partySize ?: journey.partySize}명 · 예상 대기 ${waitMin?.let { "${it}분" } ?: "정보 없음"}", style = Type.Body)
+                Text("허용 ${journey.waitLimitMin}분${waitMin?.let { if (it > journey.waitLimitMin) " · 설정한 시간보다 길어요" else " · 설정 범위 안" } ?: " · 비교할 정보 없음"}", style = Type.Label,
+                    color = if (waitMin != null && waitMin > journey.waitLimitMin) Palette.Orange else Palette.Muted)
+                ResultDetail(stop)
             }
         }
-        @OptIn(ExperimentalLayoutApi::class)
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            when (etaSource) {
-                EtaSource.NAVI_LIVE -> SourceBadge(true, "도착 예상(내비 실시간)")
-                EtaSource.NAVI_REQUEST -> SourceBadge(true, "도착 예상(내비 조회)")
-                EtaSource.DEMO -> SourceBadge(false, "도착 예상")
-                null -> Badge("도착 예상 정보 없음", Palette.Gray)
-            }
-            Badge("대기·접수 · 시연용 데이터", Palette.Orange)
-        }
-        if (journey.lowAccuracy) Text("도착 예상이 1분 넘게 갱신되지 않았어요 · 최근 정보 기준", style = Type.Caption)
-        ResultDetail(stop)
-    }
-
-    // 정차 중에 남아 있는 질문은 화면에서도 답할 수 있다. 주행 중에는 음성으로만 묻는다.
-    journey.prompt?.let { PromptCard(graph, it) }
-
-    if (journey.active && stop.phase == StopPhase.PLANNED && stop.submission == SubmissionStatus.NOT_REQUESTED &&
-        journey.queue != null && journey.minutesUntilPrompt == null && journey.prompt == null
-    ) {
-        BigButton("지금 웨이팅 걸기", graph.engine::promptNow, Modifier.fillMaxWidth())
-    }
-
-    if (stop.arrival != null || journey.alight?.let { it != AlightDetector.State.WAIT_ARRIVAL } == true) {
-        ArrivalPanel(graph, journey, stop)
-    }
-
-    if (journey.stops.size > 1) {
-        Panel {
-            Text("오늘의 방문", style = Type.Label)
-            journey.stops.forEachIndexed { i, s ->
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    Text("${i + 1}", style = Type.Title, color = if (i == journey.index) Palette.Primary else Palette.Muted)
-                    Text(s.store.name, Modifier.weight(1f), style = Type.Body)
-                    SubmissionBadge(s)
+        val details: @Composable () -> Unit = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (journey.prompt == null) Panel {
+                    Text("다음 행동", style = Type.Label)
+                    Text(nextAction(stop), style = Type.Title)
+                    Text("접수 시각: 정보 없음 · 갱신 시각: 정보 없음", style = Type.Caption)
+                    Text(if (waiting != null) "접수 응답 수신 · 실제 매장 미접수" else "매장 접수 확정 전 · 승인 없이 실행하지 않아요", style = Type.Caption)
+                }
+                if (stop.arrival != null || journey.alight?.let { it != AlightDetector.State.WAIT_ARRIVAL } == true) ArrivalPanel(graph, journey, stop)
+                journey.prompt?.let { PromptCard(graph, it) }
+                if (journey.active && stop.phase == StopPhase.PLANNED && stop.submission == SubmissionStatus.NOT_REQUESTED && journey.queue != null && journey.prompt == null) {
+                    BigButton("접수 여부 확인", graph.engine::promptNow, Modifier.fillMaxWidth())
                 }
             }
         }
+        if (maxWidth >= 1000.dp) Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+            Column(Modifier.weight(1f)) { summary() }
+            Column(Modifier.weight(1f)) { details() }
+        } else Column(verticalArrangement = Arrangement.spacedBy(12.dp)) { summary(); details() }
     }
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        when (etaSource) {
+            EtaSource.NAVI_LIVE -> SourceBadge(true, "ETA 실시간")
+            EtaSource.NAVI_REQUEST -> SourceBadge(true, "ETA 조회")
+            EtaSource.DEMO -> SourceBadge(false, "ETA")
+            null -> Badge("ETA 정보 없음", Palette.Gray)
+        }
+        SourceBadge(!useDemo, "좌석·도어")
+    }
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        SmallButton(if (expanded) "기록 닫기" else "방문·기록 보기", { expanded = !expanded }, Modifier.weight(1f))
+        if (journey.active) SmallButton("방문 끝내기", graph.engine::end, Modifier.weight(1f))
+    }
+    if (expanded) Column(Modifier.heightIn(max = 240.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("방문을 끝내도 접수는 취소되지 않아요.", style = Type.Caption)
+        journey.stops.forEachIndexed { i, item -> Text("${i + 1}번째 · ${item.store.name}", style = Type.Label) }
+        journey.log.takeLast(8).forEach { Text(it, style = Type.Caption) }
+    }
+}
 
-    Panel {
-        Text("기록", style = Type.Label)
-        journey.log.takeLast(8).forEach { Text(it, fontSize = 20.sp, color = Palette.Ink) }
+private fun nextAction(stop: StopState): String = when {
+    stop.submission == SubmissionStatus.UNKNOWN -> "중복 접수하지 말고 결과를 확인해 주세요"
+    stop.submission == SubmissionStatus.REQUESTING -> "접수 결과를 기다려 주세요"
+    stop.submission == SubmissionStatus.REJECTED -> "매장 정책을 확인해 주세요"
+    stop.partialArrival -> "일행 모두 도착한 뒤 매장 안내를 확인해 주세요"
+    stop.phase == StopPhase.SEATED -> "착석 처리됐어요 · 다음 방문을 확인해 주세요"
+    stop.phase == StopPhase.CANCELLED -> "접수가 취소됐어요 · 방문 계획을 확인해 주세요"
+    stop.phase == StopPhase.CALLED -> "매장 호출을 확인하고 일행과 함께 이동해 주세요"
+    stop.waiting != null -> "안전하게 주차한 뒤 매장 호출을 기다려 주세요"
+    else -> "접수할지 확인하고 승인해 주세요"
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ProgressSteps(stop: StopState) {
+    val current = when {
+        stop.phase == StopPhase.SEATED -> 6
+        stop.phase == StopPhase.CALLED -> 5
+        stop.phase == StopPhase.ARRIVED -> 4
+        stop.submission == SubmissionStatus.CONFIRMED -> 3
+        stop.submission == SubmissionStatus.REQUESTING -> 2
+        stop.phase == StopPhase.PROMPTED -> 1
+        else -> 0
     }
-    if (journey.active) BigButton("방문 끝내기 (접수는 유지)", graph.engine::end, Modifier.fillMaxWidth(), primary = false)
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        listOf("요청 전", "질문", "요청 중", "확정", "도착", "호출", "착석").forEachIndexed { i, text ->
+            Text(if (i == current) "● $text" else text, style = Type.Caption,
+                color = if (i == current) Palette.Blue else Palette.Muted)
+        }
+    }
 }
 
 @Composable
@@ -501,19 +485,13 @@ private fun SubmissionBadge(stop: StopState) {
 private fun PromptCard(graph: AppGraph, prompt: Prompt) {
     val text = prompt.text()
     Panel {
-        Text(if (prompt.kind == Prompt.Kind.PARTY_CHANGE) "다음 방문 인원" else "음성 질문", style = Type.Label)
-        Text(text.title, style = Type.Title)
-        Text(text.detail, style = Type.Body)
-        BoxWithConstraints(Modifier.fillMaxWidth()) {
-            if (maxWidth < 600.dp) Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                BigButton(text.primary, { graph.engine.approve(promptId = prompt.id) }, Modifier.fillMaxWidth())
-                text.secondary?.let { BigButton(it, { graph.engine.defer(prompt.id) }, Modifier.fillMaxWidth(), primary = false) }
-            } else Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                BigButton(text.primary, { graph.engine.approve(promptId = prompt.id) }, Modifier.weight(1f))
-                text.secondary?.let { BigButton(it, { graph.engine.defer(prompt.id) }, Modifier.weight(1f), primary = false) }
-            }
+        Text(if (prompt.kind == Prompt.Kind.PARTY_CHANGE) "다음 방문 인원" else "승인 확인", style = Type.Caption)
+        Text(if (prompt.kind == Prompt.Kind.CALLED) "매장에서 호출했어요 · 일행 도착을 확인해 주세요" else text.title, style = Type.Body)
+        Text(text.detail, style = Type.Label)
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            BigButton(text.primary, { graph.engine.approve(promptId = prompt.id) }, Modifier.weight(1f))
+            text.secondary?.let { BigButton(it, { graph.engine.defer(prompt.id) }, Modifier.weight(1f), primary = false) }
         }
-        Text("주행 중에는 같은 질문을 음성으로 해요. 승인한 경우에만 실행해요.", style = Type.Caption)
     }
 }
 
@@ -524,15 +502,15 @@ private fun ArrivalPanel(graph: AppGraph, journey: JourneyState, stop: StopState
     val party = stop.waiting?.partySize ?: journey.partySize
     Panel {
         Text("도착 후 확인", style = Type.Label)
-        Text("${stop.store.name} · 목적지 도착 감지", style = Type.Title)
+        Text("목적지 도착 감지", style = Type.Caption)
         val state = journey.alight
         when {
             stop.partialArrival -> {
-                Text(stop.partialLine(party), style = Type.Headline, color = Palette.Orange)
-                Text("일행이 모두 도착하기 전이에요. 동시 입장 매장은 아직 입장할 수 없어요.", style = Type.Body)
+                Text(stop.partialLine(party), style = Type.Title, color = Palette.Orange)
+                Text("전체 도착 전이에요 · 입장 여부는 매장 안내를 확인해 주세요.", style = Type.Caption)
             }
             stop.arrival == ArrivalResult.CONFIRMED ->
-                Text("차량 신호 기준 ${stop.alighted}/${party}명 하차 추정", style = Type.Headline, color = Palette.Green)
+                Text("차량 신호 기준 ${stop.alighted}/${party}명 하차 추정", style = Type.Title, color = Palette.Green)
             stop.arrival == ArrivalResult.MANUAL -> Text("도착을 직접 확인했어요", style = Type.Title)
             state == AlightDetector.State.MANUAL -> {
                 Text("하차를 자동으로 확인하지 못했어요", style = Type.Body)
@@ -540,11 +518,7 @@ private fun ArrivalPanel(graph: AppGraph, journey: JourneyState, stop: StopState
             }
             else -> Text("내리는 인원을 확인하고 있어요", style = Type.Body)
         }
-        if (stop.arrival != null) Text("매장 전송: 앱 내부 시연 데이터 · 실제 매장 미접수", style = Type.Label)
-        stop.waiting?.takeIf { stop.submission == SubmissionStatus.CONFIRMED }?.let {
-            Text("접수 번호 ${it.ticketNo} · ${it.partySize}명 · 매장 호출을 기다려 주세요", style = Type.Body)
-        }
-        SourceBadge(real = !useDemo, label = "좌석·도어")
+        Text("도착 전송: ${if (stop.arrival != null) "시연 데이터 · 실제 매장 미전송" else "확인 전"}", style = Type.Caption)
     }
 }
 

@@ -51,7 +51,7 @@ fun BigButton(
     enabled: Boolean = true,
 ) {
     Button(
-        onClick, modifier.heightIn(min = 100.dp), enabled = enabled,
+        onClick, modifier.heightIn(min = if (LocalCompact.current) 64.dp else 80.dp), enabled = enabled,
         shape = RoundedCornerShape(32.dp),
         colors = ButtonDefaults.buttonColors(
             containerColor = if (primary) Palette.Primary else Palette.Button,
@@ -60,7 +60,7 @@ fun BigButton(
             disabledContentColor = Palette.Muted,
         ),
         border = if (enabled) null else BorderStroke(2.dp, Palette.Line),
-        contentPadding = PaddingValues(horizontal = 40.dp, vertical = 16.dp),
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
     ) {
         Text(text, style = Type.Title.copy(color = Color.Unspecified), textAlign = TextAlign.Center)
     }
@@ -80,7 +80,7 @@ fun SmallButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier
         contentPadding = PaddingValues(horizontal = 24.dp, vertical = 8.dp),
     ) {
         Text(
-            text, fontFamily = Type.Body.fontFamily, fontSize = 26.sp, lineHeight = 34.sp,
+            text, style = Type.Body.copy(color = Color.Unspecified),
             fontWeight = FontWeight.Bold, softWrap = true,
         )
     }
@@ -90,7 +90,7 @@ fun SmallButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier
 fun Badge(text: String, color: Color, modifier: Modifier = Modifier) {
     Row(
         modifier.background(color.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
-            .padding(horizontal = 16.dp, vertical = 10.dp),
+            .padding(horizontal = 10.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Box(Modifier.size(8.dp).background(color, RoundedCornerShape(50)))
@@ -106,7 +106,7 @@ fun PartyStepper(party: Int?, onChange: (Int) -> Unit, modifier: Modifier = Modi
         color = Palette.Elevated, border = BorderStroke(2.dp, Palette.Line), shadowElevation = 6.dp,
     ) {
         Row(
-            Modifier.heightIn(min = 100.dp).padding(horizontal = 12.dp, vertical = 18.dp),
+            Modifier.heightIn(min = if (LocalCompact.current) 64.dp else 80.dp).padding(horizontal = 12.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             IconButton({ onChange(((party ?: 2) - 1).coerceAtLeast(1)) }, Modifier.size(64.dp), enabled = party == null || party > 1) {
@@ -128,7 +128,7 @@ fun TimeBlock(value: String, unit: String, label: String, modifier: Modifier = M
         Text(label, style = Type.Label)
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(value, style = Type.Display, maxLines = 1)
-            Text(unit, Modifier.padding(bottom = 14.dp), style = Type.Body, maxLines = 1)
+            Text(unit, Modifier.padding(bottom = 4.dp), style = Type.Body, maxLines = 1)
         }
     }
 }

@@ -15,6 +15,8 @@ import com.smartjourney.vehicle.core.VehicleGateway
 import com.smartjourney.vehicle.core.VehicleSnapshot
 import com.smartjourney.vehicle.core.setRouteAndShowNavigation
 import com.smartjourney.vehicle.data.FakeBackend
+import com.smartjourney.vehicle.data.ServerBackend
+import com.smartjourney.vehicle.data.SwitchingBackend
 import com.smartjourney.vehicle.data.PreferencesJourneyStorage
 import com.smartjourney.vehicle.demo.DemoController
 import com.smartjourney.vehicle.domain.Store
@@ -74,7 +76,20 @@ val Context.graph: AppGraph get() = (applicationContext as SmartJourneyApp).grap
 class AppGraph(private val context: Context) {
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     val demo = DemoController(scope)
-    val backend = FakeBackend()
+    /** true면 smart-journey-server(웹 POS와 공유)로 접수한다. 디버그 빌드의 데모 패널에서 켠다. */
+    val useServer = MutableStateFlow(false)
+    val backend = SwitchingBackend(
+        fake = FakeBackend(),
+        server = BuildConfig.SERVER_URL.takeIf { it.isNotBlank() }?.let(::ServerBackend),
+        useServer = { useServer.value },
+    )
+
+    /** 진행 중인 방문이 없을 때만 바꾼다. 방문 도중 바꾸면 접수 결과를 다른 곳에서 찾게 된다. */
+    fun setUseServer(on: Boolean): Boolean {
+        if (engine.state.value.active || (on && backend.server == null)) return false
+        useServer.value = on
+        return true
+    }
     val storage = PreferencesJourneyStorage(context)
     val navi = NaviGatewayFactory.create(context)
     val signals = AppSignals(context, navi, demo, scope)
@@ -149,6 +164,12 @@ class AppGraph(private val context: Context) {
             return route
         }
         startError.value = null
+        // 서버 연동이면 여정을 먼저 만든다. 실패하면 방문을 시작하지 않는다.
+        runCatching { backend.startJourney(partySize, stops.map { it.id }, sensed = false) }.exceptionOrNull()?.let {
+            JourneyService.stop(context)
+            startError.value = "접수 서버에 연결하지 못했어요 (${it.message})"
+            return Result.failure(it)
+        }
         if (route.isFailure) Log.w(TAG, "내비 경로 입력 실패, 데모 신호로 계속: ${route.exceptionOrNull()?.message}")
         engine.start(partySize, stops, waitLimitMin.value)
         if (demo.enabled.value) demo.onJourneyStarted()

@@ -16,7 +16,7 @@ import kotlinx.coroutines.launch
  *
  * 명령: consent, start(n=매장 수), prompt(지금 걸기), approve, defer, drive, stop, remaining(n=분), speed(n=초/초), arrive,
  *       door(n=1 열림/0 닫힘), seats(n=명), alight(n=내리는 인원), board(n=탑승 인원), walkin(n=±팀),
- *       call, seat, arrived(수동 도착), mode(n=1 데모/0 실제), eta(n=1 실제 내비/0 데모), limit(n=분), end, state
+ *       call, seat, arrived(수동 도착), mode(n=1 데모/0 실제), eta(n=1 실제 내비/0 데모), server(n=1 서버 연동/0 앱 안 데이터), limit(n=분), end, state
  */
 class DemoReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -43,9 +43,10 @@ class DemoReceiver : BroadcastReceiver() {
             "seats" -> g.demo.vehicle.setOccupied(n)
             "alight" -> g.demo.playAlight(n)
             "board" -> g.demo.playBoard(n)
-            "walkin" -> g.backend.addWalkIn(current?.store?.id ?: 1, n)
-            "call" -> current?.waiting?.let { g.backend.call(it.waitingId) }
-            "seat" -> current?.waiting?.let { g.backend.seat(it.waitingId) }
+            "walkin" -> g.backend.fake.addWalkIn(current?.store?.id ?: 1, n)
+            "call" -> current?.waiting?.let { g.backend.fake.call(it.waitingId) }
+            "seat" -> current?.waiting?.let { g.backend.fake.seat(it.waitingId) }
+            "server" -> Log.i(TAG, "server → ${g.setUseServer(n == 1)}")
             "arrived" -> g.engine.confirmManualArrival()
             "mode" -> g.demo.enabled.value = n == 1
             "eta" -> g.demo.realEta.value = n == 1

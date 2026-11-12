@@ -23,6 +23,7 @@ import com.smartjourney.vehicle.R
 
 // Pleos Connect 2.1.5: Qc0CvEITX6nhlFIGDx8pzf (Colors, Typography, Basic Button).
 // System surfaces and text follow the vehicle's day/night configuration.
+internal val LocalCompact = staticCompositionLocalOf { false }
 private val LocalNight = staticCompositionLocalOf { false }
 private val AstaSans = FontFamily(
     Font(R.font.asta_sans, FontWeight.Normal, variationSettings = FontVariation.Settings(FontVariation.weight(400))),
@@ -56,18 +57,18 @@ object Palette {
 object Type {
     private fun style(size: Int, line: Int, weight: FontWeight = FontWeight.Normal) =
         TextStyle(fontFamily = AstaSans, fontSize = size.sp, lineHeight = line.sp, fontWeight = weight)
-    val Display: TextStyle @Composable @ReadOnlyComposable get() = style(60, 80, FontWeight.ExtraBold).copy(color = Palette.Ink)
-    val Headline: TextStyle @Composable @ReadOnlyComposable get() = style(48, 64, FontWeight.Bold).copy(color = Palette.Ink)
-    val Title: TextStyle @Composable @ReadOnlyComposable get() = style(32, 40, FontWeight.Bold).copy(color = Palette.Ink)
-    val Body: TextStyle @Composable @ReadOnlyComposable get() = style(28, 36).copy(color = Palette.Ink)
-    val Label: TextStyle @Composable @ReadOnlyComposable get() = style(24, 28).copy(color = Palette.Muted)
-    val Caption: TextStyle @Composable @ReadOnlyComposable get() = style(20, 24).copy(color = Palette.Muted)
+    val Display: TextStyle @Composable @ReadOnlyComposable get() = style(if (LocalCompact.current) 40 else 60, if (LocalCompact.current) 48 else 80, FontWeight.ExtraBold).copy(color = Palette.Ink)
+    val Headline: TextStyle @Composable @ReadOnlyComposable get() = style(if (LocalCompact.current) 30 else 48, if (LocalCompact.current) 38 else 64, FontWeight.Bold).copy(color = Palette.Ink)
+    val Title: TextStyle @Composable @ReadOnlyComposable get() = style(if (LocalCompact.current) 24 else 32, if (LocalCompact.current) 30 else 40, FontWeight.Bold).copy(color = Palette.Ink)
+    val Body: TextStyle @Composable @ReadOnlyComposable get() = style(if (LocalCompact.current) 22 else 28, if (LocalCompact.current) 28 else 36).copy(color = Palette.Ink)
+    val Label: TextStyle @Composable @ReadOnlyComposable get() = style(if (LocalCompact.current) 18 else 24, if (LocalCompact.current) 24 else 28).copy(color = Palette.Muted)
+    val Caption: TextStyle @Composable @ReadOnlyComposable get() = style(if (LocalCompact.current) 16 else 20, if (LocalCompact.current) 22 else 24).copy(color = Palette.Muted)
 }
 
 object PleosSpace {
-    val Page = 40.dp
-    val Section = 32.dp
-    val Gap = 24.dp
+    val Page get() = 20.dp
+    val Section get() = 20.dp
+    val Gap get() = 12.dp
     val CardRadius = 32.dp
 }
 

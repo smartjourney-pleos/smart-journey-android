@@ -16,8 +16,8 @@ android {
         minSdk = 28 // Vehicle SDK 최소 요구 (Pleos 문서: API 28 이상)
         targetSdk = 34
         // 심사 요청·배포 때마다 반드시 올린다 (Pleos 앱 버전 관리 정책). Gleo schema.json의 version과 맞춘다.
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 3
+        versionName = "0.2.1"
         buildConfigField("String", "VEHICLE_SDK_VERSION", "\"${libs.versions.pleosVehicle.get()}\"")
         buildConfigField("String", "NAVI_SDK_VERSION", "\"${libs.versions.pleosNaviHelper.get()}\"")
     }
@@ -38,7 +38,13 @@ android {
     }
 
     buildTypes {
+        debug {
+            // 에뮬레이터에서 호스트의 smart-journey-server. 평문 HTTP는 debug 소스셋의 네트워크 설정에서 10.0.2.2만 허용한다.
+            buildConfigField("String", "SERVER_URL", "\"http://10.0.2.2:8080\"")
+        }
         release {
+            // 운영 서버(https)가 준비되기 전까지 릴리스는 앱 안 시연 데이터만 쓴다.
+            buildConfigField("String", "SERVER_URL", "\"\"")
             isMinifyEnabled = false
             // 키가 없으면 서명되지 않은 APK가 나온다(심사 제출 불가)
             signingConfig = signingConfigs.findByName("release")

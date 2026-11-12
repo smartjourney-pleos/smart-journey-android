@@ -23,6 +23,9 @@ class RegistrationRejectedException(message: String) : Exception(message)
 interface WaitingBackend {
     /** 앱 안의 시연 데이터인지. 화면·음성 결과에 데모임을 알린다. */
     val isDemo: Boolean get() = false
+
+    /** 여정(코스)을 서버에 만든다. 앱 안 시연 백엔드는 할 일이 없다. */
+    suspend fun startJourney(partySize: Int, storeIds: List<Long>, sensed: Boolean) {}
     suspend fun stores(): List<Store>                                   // GET /stores
     fun queueStatus(storeId: Long): Flow<QueueStatus>                   // GET queue-status + STOMP QUEUE_UPDATED
     suspend fun register(storeId: Long, partySize: Int, method: ApprovalMethod, idempotencyKey: String): Waiting  // POST /waitings
