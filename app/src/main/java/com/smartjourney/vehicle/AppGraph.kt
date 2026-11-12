@@ -146,7 +146,7 @@ class AppGraph(private val context: Context) {
         if (consented.value) {
             val restored = engine.restore()
             if (restored) {
-                Log.i(TAG, "이전 여정 복원 완료 (${engine.state.value.current?.store?.name})")
+                Log.i(TAG, "이전 여정 복원 완료 (${engine.state.value.stops.size}곳)") // 매장 이름은 로그에 남기지 않는다
                 JourneyService.start(context)
             }
         }
