@@ -8,10 +8,16 @@ pluginManagement {
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
+        // Pleos 그룹은 공식 Maven에서만 받는다 (공개 저장소의 동명 아티팩트로 대체되는 의존성 혼동 방지)
+        exclusiveContent {
+            forRepository { maven { url = uri("https://nexus-playground.pleos.ai/repository/maven-releases/") } }
+            filter {
+                includeGroup("ai.pleos.playground")
+                includeGroup("ai.pleos.playground.security") // Speech SDK의 universal-access 의존성
+            }
+        }
         google()
         mavenCentral()
-        // Pleos 공식 Maven 저장소 (Vehicle SDK)
-        maven { url = uri("https://nexus-playground.pleos.ai/repository/maven-releases/") }
     }
 }
 rootProject.name = "smart-journey-android"

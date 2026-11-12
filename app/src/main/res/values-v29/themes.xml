@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 차량 주간/야간 모드를 따른다 (Pleos UI Design Guide: 조명 환경에 따라 밝기·대비 조정) -->
+    <style name="Theme.SmartJourney" parent="@android:style/Theme.DeviceDefault.DayNight">
+        <item name="android:windowActionBar">false</item>
+        <item name="android:windowNoTitle">true</item>
+    </style>
+</resources>

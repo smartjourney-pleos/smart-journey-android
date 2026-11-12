@@ -7,7 +7,10 @@ activityCompose = "1.9.3"
 composeBom = "2024.10.01"
 coroutines = "1.9.0"
 pleosVehicle = "2.3.2"
+pleosNaviHelper = "3.0.5"
+pleosSpeech = "3.3.1"
 junit = "4.13.2"
+json = "20240303"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
@@ -20,7 +23,11 @@ androidx-compose-material3 = { module = "androidx.compose.material3:material3" }
 kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "coroutines" }
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }
 pleos-vehicle = { module = "ai.pleos.playground:Vehicle", version.ref = "pleosVehicle" }
+pleos-navihelper = { module = "ai.pleos.playground:NaviHelper", version.ref = "pleosNaviHelper" }
+pleos-tts = { module = "ai.pleos.playground:TextToSpeech", version.ref = "pleosSpeech" }
+pleos-stt = { module = "ai.pleos.playground:SpeechToText", version.ref = "pleosSpeech" }
 junit = { module = "junit:junit", version.ref = "junit" }
+org-json = { module = "org.json:json", version.ref = "json" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

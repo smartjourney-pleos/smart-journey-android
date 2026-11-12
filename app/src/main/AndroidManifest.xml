@@ -5,13 +5,37 @@
     <uses-permission android:name="pleos.car.permission.CAR_SEATS" />
     <uses-permission android:name="pleos.car.permission.CAR_DOORS" />
 
+    <!-- NaviHelper: 정보 조회(NAVI_ROUTE), 경로 요청·변경(NAVI_ROUTE_SEARCH) -->
+    <uses-permission android:name="pleos.car.permission.NAVI_ROUTE" />
+    <uses-permission android:name="pleos.car.permission.NAVI_ROUTE_SEARCH" />
+    <!-- 경로 설정 후 내장 내비 화면을 전경으로 요청한다 (NaviHelper.requestNavigationScreen, normal). -->
+    <uses-permission android:name="pleos.car.permission.NAVI_CUSTOM_MAP" />
+    <!-- 주행 중 음성 질문·응답 (Pleos TextToSpeech·SpeechToText 3.3.1, ON_DEVICE) -->
+    <uses-permission android:name="pleos.car.permission.TTS_SERVICE" />
+    <uses-permission android:name="pleos.car.permission.STT_SERVICE" />
+
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- 사용자가 설정에서 허용한 경우에만 다른 앱 위에 웨이팅 질문 카드를 표시한다. -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
+    <!-- 백그라운드 엔진(JourneyService)과 비침입형 상태 알림 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+
+    <!-- 시작 화면에서 설치된 SDK 서비스 버전을 확인한다 (Android 11+ package visibility). -->
+    <queries>
+        <package android:name="ai.pleos.playground.service.vehicle" />
+        <package android:name="ai.pleos.playground.service.navi" />
+    </queries>
 
     <application
+        android:name=".SmartJourneyApp"
         android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
         android:label="스마트 저니"
-        android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
+        android:theme="@style/Theme.SmartJourney">
 
         <activity
             android:name=".MainActivity"
@@ -21,6 +45,30 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <service
+            android:name=".service.JourneyService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="내비 경로를 따라 웨이팅 시점과 도착·하차를 확인하는 여정 엔진" />
+        </service>
+
+        <!-- Gleo App Schema(assets/schema.json)의 function 호출. Gleo의 signature 권한을 가진 송신자만 부를 수 있다. -->
+        <receiver
+            android:name=".voice.GleoActionReceiver"
+            android:exported="true"
+            android:permission="ai.umos.gleo.permission.APP_ACTION">
+            <intent-filter>
+                <!-- Gleo AI는 "<패키지명>.<function 이름>"으로 보낸다. 문서 예시의 이름만 오는 형태도 함께 받는다. -->
+                <action android:name="com.smartjourney.vehicle.GET_SMART_JOURNEY_STATUS" />
+                <action android:name="com.smartjourney.vehicle.RESPOND_SMART_JOURNEY_PROMPT" />
+                <action android:name="GET_SMART_JOURNEY_STATUS" />
+                <action android:name="RESPOND_SMART_JOURNEY_PROMPT" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </receiver>
 
     </application>
 </manifest>
