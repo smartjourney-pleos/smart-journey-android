@@ -36,3 +36,16 @@ release 병합 Manifest에 `ApprovalActivity`·`PromptActionReceiver`·`SYSTEM_A
 
 - 실제 운전자 마이크·차내 소음, Gleo 자연어 왕복, 실제 서버·매장 접수, 전화 연결은 미검증·미구현.
 - "걸어 줘"의 온디바이스 인식률이 낮다. 질문의 안내 문구는 "응 / 나중에"를 우선 권한다. 오인식 문구를 승인 목록에 넣지 않는다.
+
+## 제출 저장소 기준 재검증 (0.2.3)
+
+- main 저장소를 새로 clone해 `apk/SHA256SUMS.txt` 해시가 일치하고, README의 `adb install -r -g` → `am start --user 10` 명령 그대로 설치·실행됨을 확인했다.
+- 화면 터치만으로 README 시나리오 A(동의 → 42dot 방문 시작 → 정차 후 "걸기" → 번호 11 확정 → 일행 3명 하차 = 일부 도착 → 운전자 하차 = 4/4)와 B(허용 10분 → 소프트웨어드림센터 → "대기가 15분이에요. 그래도 걸까요?" → 보류 = 접수 없음)를 끝까지 진행했다.
+- 발견해 고친 것: 홈에서 고른 방문지·인원이 탭 전환 때 초기화되던 문제(`rememberSaveableStateHolder`).
+
+## Gleo AI 호출 — 미검증
+
+- 확인한 것: Gleo AI(`ai.umos.ambientai` 4.2.0.15)가 앱 설치 때 스키마를 읽어 `package=com.smartjourney.vehicle functionCount=2`로 등록한다. Gleo는 호출어 "Gleo" 감지를 위해 마이크(`src:HOTWORD`)를 계속 연다.
+- 시도: 에뮬레이터 호스트 마이크를 켜고(`adb emu avd hostmicon`) Mac 스피커로 "Gleo/글레오"와 앱 질문 응답 "응"을 재생했다. 앱 STT에 오디오 프레임은 들어왔지만 인식 결과가 없었고 Gleo도 깨어나지 않았다. macOS가 에뮬레이터 실행 앱(Orca)의 마이크 접근을 막아 무음이 들어간 것으로 보인다(TCC 확인 불가).
+- `ASSIST` 인텐트·`KEYCODE_VOICE_ASSIST`는 Gleo 대화를 시작하지 않았다. 앱의 Gleo 수신기는 Gleo 서명 권한을 요구하므로 adb로 대신 호출할 수 없다(의도한 보안 설정).
+- 남은 확인: macOS 설정에서 마이크 권한을 허용한 뒤 "Gleo, 스마트 저니 상태 알려 줘" → `GleoAction` 로그와 앱 응답 확인.

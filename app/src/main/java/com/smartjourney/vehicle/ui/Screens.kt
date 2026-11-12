@@ -33,6 +33,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -79,6 +80,8 @@ fun AppRoot(graph: AppGraph) {
     val restricted by graph.signals.restricted.collectAsStateWithLifecycle(initialValue = true)
     var showDemo by rememberSaveable { mutableStateOf(false) }
     var tab by rememberSaveable { mutableStateOf(Tab.HOME) }
+    // 탭을 바꾸거나 주행 화면으로 바뀌어도 홈에서 고른 방문지·인원을 잃지 않는다
+    val tabStates = rememberSaveableStateHolder()
     val issues = rememberIssues(graph, journey)
 
     Surface(Modifier.fillMaxSize(), color = Palette.Background) {
@@ -95,7 +98,9 @@ fun AppRoot(graph: AppGraph) {
                         else -> {
                             Tabs(tab, issues.size, onSelect = { tab = it })
                             when (tab) {
-                                Tab.HOME -> HomeScreen(graph, journey, onShowStatus = { tab = Tab.STATUS }, modifier = Modifier.weight(1f))
+                                Tab.HOME -> tabStates.SaveableStateProvider(Tab.HOME) {
+                                    HomeScreen(graph, journey, onShowStatus = { tab = Tab.STATUS }, modifier = Modifier.weight(1f))
+                                }
                                 Tab.STATUS -> Page(Modifier.weight(1f), scroll = false) { StatusScreen(graph, journey) }
                                 Tab.ISSUES -> Page(Modifier.weight(1f)) { IssuesScreen(graph, issues) }
                             }
