@@ -59,7 +59,8 @@ private const val DEFAULT_LEG_SEC = 25 * 60
 private const val MIN_DEMO_LEG_SEC = 5 * 60
 private const val REAL_TRIP_PERIOD_MS = 30_000L
 private const val CAPS_ATTEMPTS = 3
-const val CONSENT_VERSION = "2026-11-11"
+// 서버 application.yml의 smartjourney.consent.current-version과 같아야 서버 기기 등록이 된다.
+const val CONSENT_VERSION = "2026-11-v1"
 
 /** 보유 기간. 서버의 파기 작업(DataRetentionJob, 30일)과 맞춘다. */
 const val RETENTION_DAYS = 30

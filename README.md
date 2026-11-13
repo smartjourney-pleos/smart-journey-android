@@ -11,7 +11,7 @@ Kotlin 2.0, Jetpack Compose, Coroutines/Flow, Pleos Vehicle SDK 2.3.2, Pleos Nav
 - 에뮬레이터/차량의 Vehicle 서비스 **2.3.13 이상**, Navi 서비스 **2.0.1 이상** 필요
 - 정차 중 여정 준비 화면의 **연결 환경**에 SDK 버전과 설치된 서비스 버전을 표시합니다. 최소 요구 버전은 SDK AAR의 메타데이터를 따르며, 서비스가 없거나 낮으면 설치·업데이트 안내가 나옵니다.
 
-## 0.2.10 — 1차 기획 검증용 프로토타입
+## 0.2.11 — 1차 기획 검증용 프로토타입 (서버·웹 POS 연동)
 
 정차 중에는 홈에서 방문을 계획하고, 방문 현황에서 결과를 확인합니다. **주행 중에는 내비 화면을 그대로 두고 음성으로 묻고 답하는 것이 기본입니다.** 사용자가 "다른 앱 위에 표시" 권한을 허용한 환경에서만 내비 위에 웨이팅 질문 카드를 함께 띄웁니다.
 
@@ -29,16 +29,17 @@ Kotlin 2.0, Jetpack Compose, Coroutines/Flow, Pleos Vehicle SDK 2.3.2, Pleos Nav
 | 웨이팅 질문 | 남은 ETA ≤ 예상 대기 − 도착 여유(10분)일 때 "42dot까지 20분, 대기는 30분이에요. 4명으로 지금 웨이팅을 걸까요?". 10초 안에 답이 없으면 접수하지 않고 닫음 | ETA: NaviHelper `onTripInfo` 구독 + 30초 `requestTrip` (실제) 또는 데모 입력 |
 | 음성 승인 | "응", "걸어 줘", "등록해 줘" 등 정해진 짧은 답만 승인. 무응답·모호한 답·만료·중복은 실행 안 함 | Pleos Speech SDK 3.3.1 ON_DEVICE (실제) |
 | 대기 허용 초과 | 예상 대기가 허용 시간보다 길면 "대기가 90분이에요. 그래도 걸까요?". 보류하면 접수·재질문·대체 추천 없음 | - |
-| 접수 안전 | 응답 유실은 "확인 필요"로 두고 다시 접수하지 않음. 방문을 끝내도 접수를 취소하지 않음 | `FakeBackend` (시연 데이터) |
+| 접수 안전 | 응답 유실은 "확인 필요"로 두고 다시 접수하지 않음. 방문을 끝내도 접수를 취소하지 않음 | `FakeBackend`(기본) 또는 debug 서버 모드의 `ServerBackend` |
 | 순정 내비 안내 종료 | 접수 전 방문만 닫고, 접수·요청 중·결과 미상인 방문은 유지. 매장 웨이팅은 취소하지 않음. 우리가 경로를 바꾸며 생긴 이전 경로의 취소는 내비의 현재 경로 상태(`RouteStateInfo`)로 가려 무시 | NaviHelper `onRouteCancelled`, `getRouteStateInfo` |
 | 방문 끝내기 | 접수했거나 결과를 모를 때는 확인창("계속 안내"/"안내 종료")을 거침. 방문 추적만 끝내고 접수 기록과 내비 경로는 건드리지 않음 | - |
 | 일부 하차 | 하차 추정 < 방문 인원이면 일부 도착으로 표시하고 도착 완료로 보지 않음 | 좌석·도어 (데모 입력) |
-| Gleo | `assets/schema.json`(version 0.2.10)에는 상태 조회 `GET_SMART_JOURNEY_STATUS`만 둠. **Gleo를 통한 접수·인원 변경 승인은 받지 않음**: Gleo Action은 모델이 만든 `ACTION_PARAM`만 전달하고 새 사용자 발화를 증명하는 값이 없음(Gleo Interface 가이드, 설치된 Gleo AI 4.2.0.15 확인). 예전 스키마로 오는 승인 호출에도 아무것도 실행하지 않음 | 0.2.10: 에뮬레이터에서 Gleo가 상태 조회 함수 1개를 등록하는 것만 확인. 상태 조회 자연어 왕복은 이전 빌드(0.2.5)에서 Mac `say` 합성 음성을 호스트 마이크로 넣어 시험한 결과이며 0.2.10에서는 재시험하지 않음. 사람이 말하는 Gleo 대화 전체 흐름은 미검증 |
+| Gleo | `assets/schema.json`(version 0.2.11)에는 상태 조회 `GET_SMART_JOURNEY_STATUS`만 둠. **Gleo를 통한 접수·인원 변경 승인은 받지 않음**: Gleo Action은 모델이 만든 `ACTION_PARAM`만 전달하고 새 사용자 발화를 증명하는 값이 없음(Gleo Interface 가이드, 설치된 Gleo AI 4.2.0.15 확인). 예전 스키마로 오는 승인 호출에도 아무것도 실행하지 않음 | 0.2.10: 에뮬레이터에서 Gleo가 상태 조회 함수 1개를 등록하는 것만 확인. 상태 조회 자연어 왕복은 이전 빌드(0.2.5)에서 Mac `say` 합성 음성을 호스트 마이크로 넣어 시험한 결과이며 0.2.10에서는 재시험하지 않음. 사람이 말하는 Gleo 대화 전체 흐름은 미검증 |
 
-화면 상단에는 **"시연용 데이터 · 실제 매장 미접수"**를 항상 표시하고, 값마다 **실제 SDK / 데모 입력** 배지를 붙입니다. 서버·매장 POS는 앱 안의 `FakeBackend`이며, 실제 매장에는 접수되지 않습니다.
+화면 상단에는 **"시연용 데이터 · 실제 매장 미접수"**를 항상 표시하고, 값마다 **실제 SDK / 데모 입력** 배지를 붙입니다. 기본 접수처는 앱 안의 `FakeBackend`입니다. **debug 빌드**는 데모 패널의 "접수 백엔드" 스위치로 [smart-journey-server](https://github.com/smartjourney-pleos/smart-journey-server)에 접수하고 [웹 POS](https://github.com/smartjourney-pleos/smart-journey-web)에서 호출·착석할 수 있습니다([서버·웹과 함께 실행](#서버웹-pos와-함께-실행)). 서버의 매장도 시연용(웨이팅은 실제 영업 정보가 아님)이라 실제 매장에는 접수되지 않습니다.
 
 ### 검증 범위와 남은 제약
 
+- 0.2.11 서버 연동 검증: 로컬 서버 + 웹 POS + 에뮬레이터로 접수 → ETA → 하차 4/4 → 웹 호출 → 착석 → 다음 매장 확인. [0.2.11 기록](docs/verification/release-0.2.11.md)
 - 0.2.10 통합 검증: `./gradlew :app:assembleDebug :app:assembleRelease :app:testDebugUnitTest :app:lintDebug` 성공, 단위 테스트 87개 실패 0(Gleo 토큰 승인 테스트 17개를 승인 차단 회귀 테스트 9개로 교체). 변경 내용은 [0.2.10 기록](docs/verification/release-0.2.10.md)에 있습니다.
 - 아래 독립 QA는 서명된 release 0.2.9 기준입니다. 0.2.10은 Gleo 승인 경로만 닫은 수정이며 독립 QA는 별도로 진행합니다.
   - 강제 권한 없는 일반 설치에서 순정 내비로 안내를 종료하면 접수 전 방문이 정리되는 것을 확인했습니다.
@@ -70,6 +71,21 @@ adb logcat -s SJ SJ-DEMO SJ-NAVI   # 엔진·내비 로그
 
 음성 응답은 차량 마이크로 말하거나, 디버그 빌드의 `SpeechProbeActivity`로 합성 PCM(`files/voice-test.pcm`, 16kHz·16bit·mono)을 실제 ASR에 넣어 확인합니다.
 
+## 서버·웹 POS와 함께 실행
+
+세 저장소의 `main`을 받아 한 컴퓨터에서 돌립니다. 자세한 순서와 문제 해결은 [smart-journey-main README](https://github.com/smartjourney-pleos/smart-journey-main#서버웹-pos와-함께-실행)에 있습니다.
+
+```bash
+# 1) 서버 (JDK 21, H2 + 데모 매장 자동) — http://localhost:8080
+git clone https://github.com/smartjourney-pleos/smart-journey-server && cd smart-journey-server && ./gradlew bootRun
+# 2) 웹 POS (Node 22+) — http://localhost:5173, 매장 42dot · PIN 1234
+git clone https://github.com/smartjourney-pleos/smart-journey-web && cd smart-journey-web && npm install && npm run dev
+# 3) 앱 debug APK 설치 → 동의 → 데모 패널 "접수 백엔드" 스위치 켜기(서버 연동) → 방문 시작
+./gradlew :app:installDebug   # 에뮬레이터에서 서버 주소는 http://10.0.2.2:8080 (debug 고정)
+```
+
+앱이 서버에 기기 등록을 하려면 앱의 고지 버전(`CONSENT_VERSION`)과 서버 `smartjourney.consent.current-version`이 같아야 합니다(현재 `2026-11-v1`). 데모 매장은 세 곳 모두 42dot(1)·소프트웨어드림센터(2)입니다.
+
 ## 구성
 
 | 경로 (`app/src/main/java/com/smartjourney/vehicle/`) | 내용 |
@@ -79,7 +95,7 @@ adb logcat -s SJ SJ-DEMO SJ-NAVI   # 엔진·내비 로그
 | `engine/` | `JourneyEngine`: 매장마다 골든타임 → 승인 → 접수 → 도착·하차 → 호출 → 착석을 진행 |
 | `service/` | `JourneyService`(포그라운드 서비스, 엔진 유지·음성 질문)와 LOW 중요도 상태 알림 |
 | `voice/` | `VoicePromptController`(읽기 후 듣기, 승인 판정), `PleosVoiceGateway`(TTS·STT), `GleoActionReceiver`·`GleoActionHandler`(상태 조회만, 승인 차단) |
-| `data/` | `WaitingBackend`(서버 계약)와 `FakeBackend` |
+| `data/` | `WaitingBackend`(서버 계약), `FakeBackend`(앱 안 시연 데이터), `ServerBackend`(smart-journey-server REST, 3초 조회)·`SwitchingBackend` |
 | `demo/` | `DemoController`: 데모 신호 조작 |
 | `ui/` | 정차 화면(동의·홈·방문 현황·확인 필요), 주행 중 상태, 데모 패널, 내비 위 웨이팅 카드(`MapPromptPopup`·`PromptCard`, 오버레이 권한 허용 시) |
 | `AppGraph.kt` | 객체 묶음, 실제 신호와 데모 신호 선택(`AppSignals`) |
