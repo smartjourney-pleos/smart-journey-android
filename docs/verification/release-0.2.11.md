@@ -12,6 +12,7 @@
 
 | 항목 | 결과 |
 | --- | --- |
-| 빌드·테스트 | `./gradlew :app:assembleDebug :app:assembleRelease :app:testDebugUnitTest :app:lintDebug` 성공, 단위 테스트 87개 실패 0. release는 서명 키가 없어 unsigned로만 빌드 |
+| 빌드·테스트 | `./gradlew :app:assembleDebug :app:assembleRelease :app:testDebugUnitTest :app:lintDebug` 성공, 단위 테스트 87개 실패 0. release는 아래 서명 항목 참고 |
 | 서버 연동 | 로컬 smart-journey-server(main + #2) · smart-journey-web(#9 + #10) · 에뮬레이터 debug APK. 웹 +3팀 → 질문(대기 15분) → 접수(앞에 3팀) → ETA → 4/4 하차 배지 → 웹 호출 → 앱 호출됨 → 웹 착석 → 다음 매장. 자세한 표는 [서버 연동](../development/server-integration.md) |
-| 미확인 | release 서명 빌드(키 없음), 실차, STOMP 실시간 구독(앱은 3초 조회) |
+| release 서명 | 0.2.10과 같은 인증서(SHA-256 `f888bfaf…d111`)로 서명. 0.2.10 release 위에 업데이트 설치·실행·크래시 없음 확인 |
+| 미확인 | 실차, STOMP 실시간 구독(앱은 3초 조회) |
