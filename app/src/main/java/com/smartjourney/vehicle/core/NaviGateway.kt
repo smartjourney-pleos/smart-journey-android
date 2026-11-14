@@ -6,6 +6,7 @@ package com.smartjourney.vehicle.core
 
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.math.abs
 
 data class Place(
     val latitude: Double,
@@ -26,6 +27,17 @@ sealed interface ArrivalEvent {
 }
 
 class NaviException(message: String) : Exception(message)
+
+/** 내비는 POI 건물 좌표를 차량 진입점으로 보정할 수 있다. 같은 POI/하위 POI를 우선 확인한다. */
+internal fun destinationMatches(expected: Place, actual: Place): Boolean {
+    if (expected.poiId.isNotBlank() && actual.poiId.isNotBlank()) {
+        val expectedSub = expected.poiSubId.takeUnless { it.isBlank() || it == "0" }
+        val actualSub = actual.poiSubId.takeUnless { it.isBlank() || it == "0" }
+        return expected.poiId == actual.poiId && expectedSub == actualSub
+    }
+    return abs(expected.latitude - actual.latitude) < 0.0001 &&
+        abs(expected.longitude - actual.longitude) < 0.0001
+}
 
 interface NaviGateway {
     /** `requestTrip` 이후 `onTripInfo`로 오는 값. 마지막 값을 기억한다. */
@@ -53,21 +65,23 @@ interface NaviGateway {
     /** 내비 화면을 전경으로 요청한다. 지도 타일을 제공하거나 앱 안에 지도를 삽입하는 API는 아니다. */
     suspend fun showNavigation(): Result<Unit>
 
+    /** SDK 서비스 연결과 별개로 내비 지도/서비스가 요청을 처리할 수 있을 때까지 기다린다. */
+    suspend fun awaitReady(dest: Place): Result<Unit>
+
     fun release()
 }
 
-/** 경로 설정과 화면 전환은 별개다. 화면 요청 실패 때문에 이미 설정된 경로를 실패로 바꾸지 않는다. */
+/** 첫 실행에도 지도 초기화를 진행하도록 내비를 먼저 열고, 준비된 뒤 경로를 한 번 요청한다. */
 suspend fun NaviGateway.setRouteAndShowNavigation(
     dest: Place,
     waypoints: List<Place> = emptyList(),
-    onDisplayFailure: (Throwable) -> Unit = {},
 ): Result<Unit> {
-    val route = withTimeoutOrNull(20_000) { setRoute(dest, waypoints) }
+    val display = withTimeoutOrNull(5_000) { showNavigation() }
+        ?: Result.failure(NaviException("내비 화면 전환 응답 없음"))
+    if (display.isFailure) return display
+    val ready = withTimeoutOrNull(15_000) { awaitReady(dest) }
+        ?: Result.failure(NaviException("내비 지도 준비 응답 없음"))
+    if (ready.isFailure) return ready
+    return withTimeoutOrNull(20_000) { setRoute(dest, waypoints) }
         ?: Result.failure(NaviException("내비 경로 탐색 응답 없음"))
-    if (route.isSuccess) {
-        val display = withTimeoutOrNull(5_000) { showNavigation() }
-            ?: Result.failure(NaviException("내비 화면 전환 응답 없음"))
-        display.exceptionOrNull()?.let(onDisplayFailure)
-    }
-    return route
 }

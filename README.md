@@ -11,7 +11,7 @@ Kotlin 2.0, Jetpack Compose, Coroutines/Flow, Pleos Vehicle SDK 2.3.2, Pleos Nav
 - 에뮬레이터/차량의 Vehicle 서비스 **2.3.13 이상**, Navi 서비스 **2.0.1 이상** 필요
 - 정차 중 여정 준비 화면의 **연결 환경**에 SDK 버전과 설치된 서비스 버전을 표시합니다. 최소 요구 버전은 SDK AAR의 메타데이터를 따르며, 서비스가 없거나 낮으면 설치·업데이트 안내가 나옵니다.
 
-## 0.2.11 — 1차 기획 검증용 프로토타입 (서버·웹 POS 연동)
+## 0.2.13 — 1차 기획 검증용 프로토타입 (내비 자동 전환·팝업 안정화 및 서버·웹 POS 연동)
 
 정차 중에는 홈에서 방문을 계획하고, 방문 현황에서 결과를 확인합니다. **주행 중에는 내비 화면을 그대로 두고 음성으로 묻고 답하는 것이 기본입니다.** 사용자가 "다른 앱 위에 표시" 권한을 허용한 환경에서만 내비 위에 웨이팅 질문 카드를 함께 띄웁니다.
 
@@ -33,12 +33,13 @@ Kotlin 2.0, Jetpack Compose, Coroutines/Flow, Pleos Vehicle SDK 2.3.2, Pleos Nav
 | 순정 내비 안내 종료 | 접수 전 방문만 닫고, 접수·요청 중·결과 미상인 방문은 유지. 매장 웨이팅은 취소하지 않음. 우리가 경로를 바꾸며 생긴 이전 경로의 취소는 내비의 현재 경로 상태(`RouteStateInfo`)로 가려 무시 | NaviHelper `onRouteCancelled`, `getRouteStateInfo` |
 | 방문 끝내기 | 접수했거나 결과를 모를 때는 확인창("계속 안내"/"안내 종료")을 거침. 방문 추적만 끝내고 접수 기록과 내비 경로는 건드리지 않음 | - |
 | 일부 하차 | 하차 추정 < 방문 인원이면 일부 도착으로 표시하고 도착 완료로 보지 않음 | 좌석·도어 (데모 입력) |
-| Gleo | `assets/schema.json`(version 0.2.11)에는 상태 조회 `GET_SMART_JOURNEY_STATUS`만 둠. **Gleo를 통한 접수·인원 변경 승인은 받지 않음**: Gleo Action은 모델이 만든 `ACTION_PARAM`만 전달하고 새 사용자 발화를 증명하는 값이 없음(Gleo Interface 가이드, 설치된 Gleo AI 4.2.0.15 확인). 예전 스키마로 오는 승인 호출에도 아무것도 실행하지 않음 | 0.2.10: 에뮬레이터에서 Gleo가 상태 조회 함수 1개를 등록하는 것만 확인. 상태 조회 자연어 왕복은 이전 빌드(0.2.5)에서 Mac `say` 합성 음성을 호스트 마이크로 넣어 시험한 결과이며 0.2.10에서는 재시험하지 않음. 사람이 말하는 Gleo 대화 전체 흐름은 미검증 |
+| Gleo | `assets/schema.json`(version 0.2.13)에는 상태 조회 `GET_SMART_JOURNEY_STATUS`만 둠. **Gleo를 통한 접수·인원 변경 승인은 받지 않음**: Gleo Action은 모델이 만든 `ACTION_PARAM`만 전달하고 새 사용자 발화를 증명하는 값이 없음(Gleo Interface 가이드, 설치된 Gleo AI 4.2.0.15 확인). 예전 스키마로 오는 승인 호출에도 아무것도 실행하지 않음 | 0.2.10: 에뮬레이터에서 Gleo가 상태 조회 함수 1개를 등록하는 것만 확인. 상태 조회 자연어 왕복은 이전 빌드(0.2.5)에서 Mac `say` 합성 음성을 호스트 마이크로 넣어 시험한 결과이며 0.2.10에서는 재시험하지 않음. 사람이 말하는 Gleo 대화 전체 흐름은 미검증 |
 
 화면 상단에는 **"시연용 데이터 · 실제 매장 미접수"**를 항상 표시하고, 값마다 **실제 SDK / 데모 입력** 배지를 붙입니다. 기본 접수처는 앱 안의 `FakeBackend`입니다. **debug 빌드**는 데모 패널의 "접수 백엔드" 스위치로 [smart-journey-server](https://github.com/smartjourney-pleos/smart-journey-server)에 접수하고 [웹 POS](https://github.com/smartjourney-pleos/smart-journey-web)에서 호출·착석할 수 있습니다([서버·웹과 함께 실행](#서버웹-pos와-함께-실행)). 서버의 매장도 시연용(웨이팅은 실제 영업 정보가 아님)이라 실제 매장에는 접수되지 않습니다.
 
 ### 검증 범위와 남은 제약
 
+- 0.2.13 내비 자동 전환·팝업 안정화 검증: 콜드부팅 후 순정 내비 미초기화 상태에서 `42dot 선택 → 방문 시작 → 순정 내비 자동 전환 → 음성 질문 및 깜빡임 없는 웨이팅 팝업`과 `0.2.12 → 0.2.13` 서명 release 업데이트를 에뮬레이터에서 확인, 단위 테스트 97개 통과, lint 오류 0건. [0.2.13 기록](docs/verification/release-0.2.13.md)
 - 0.2.11 서버 연동 검증: 로컬 서버 + 웹 POS + 에뮬레이터로 접수 → ETA → 하차 4/4 → 웹 호출 → 착석 → 다음 매장 확인. [0.2.11 기록](docs/verification/release-0.2.11.md)
 - 0.2.10 통합 검증: `./gradlew :app:assembleDebug :app:assembleRelease :app:testDebugUnitTest :app:lintDebug` 성공, 단위 테스트 87개 실패 0(Gleo 토큰 승인 테스트 17개를 승인 차단 회귀 테스트 9개로 교체). 변경 내용은 [0.2.10 기록](docs/verification/release-0.2.10.md)에 있습니다.
 - 아래 독립 QA는 서명된 release 0.2.9 기준입니다. 0.2.10은 Gleo 승인 경로만 닫은 수정이며 독립 QA는 별도로 진행합니다.

@@ -28,6 +28,8 @@
     <queries>
         <package android:name="ai.pleos.playground.service.vehicle" />
         <package android:name="ai.pleos.playground.service.navi" />
+        <!-- 순정 내비의 공개 LAUNCHER 진입점 확인 (부팅 직후 지도 초기화). -->
+        <package android:name="ai.umos.maps.android.navigation.app" />
     </queries>
 
     <application

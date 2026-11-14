@@ -2,9 +2,11 @@ package com.smartjourney.vehicle.core
 
 import ai.pleos.playground.navi.constants.NaviErrorCode
 import ai.pleos.playground.navi.constants.NaviMode
+import ai.pleos.playground.navi.constants.NavigationStatus
 import ai.pleos.playground.navi.constants.RouteOption
 import ai.pleos.playground.navi.constants.WaypointIndex
 import ai.pleos.playground.navi.data.DestinationArrivedInfo
+import ai.pleos.playground.navi.data.DestinationInfo
 import ai.pleos.playground.navi.data.NavigationScreenRequest
 import ai.pleos.playground.navi.data.RequestWaypointInfo
 import ai.pleos.playground.navi.data.RouteInfo
@@ -17,6 +19,7 @@ import ai.pleos.playground.navi.data.WaypointArrivedInfo
 import ai.pleos.playground.navi.helper.NaviHelper
 import ai.pleos.playground.navi.helper.listener.NaviHelperEventListener
 import android.content.Context
+import android.content.Intent
 import android.os.SystemClock
 import android.util.Log
 import com.smartjourney.vehicle.BuildConfig
@@ -26,6 +29,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -33,6 +37,7 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.onSubscription
 import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.withTimeoutOrNull
@@ -40,15 +45,15 @@ import kotlinx.coroutines.withTimeoutOrNull
 private const val ROUTE_TIMEOUT_MS = 15_000L
 private const val TRIP_TIMEOUT_MS = 5_000L
 
-// onRouteStarted는 "탐색 시작" 이벤트다(API Reference). 그 뒤 이 시간 안에 onError가 없으면 성공으로 본다.
-// 에뮬레이터 2.1.0은 onRoutingCompleted를 보내지 않아 이 확인이 필요하다.
+// onRoutingCompleted가 없는 내비는 탐색 시작 뒤 경로 상태와 목적지를 조회해 확인한다.
 private const val ROUTE_STARTED_GRACE_MS = 2_000L
 
-class PleosNaviGateway(context: Context) : NaviGateway {
+class PleosNaviGateway(private val context: Context) : NaviGateway {
 
     private val navi = NaviHelper(context)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val connected = CompletableDeferred<Unit>()
+    private val destinationFlow = MutableSharedFlow<DestinationInfo>(extraBufferCapacity = 4)
 
     // 경로 요청은 한 번에 하나만 기다린다. onRoutingCompleted / onError가 결과를 채우고,
     // onRouteStarted는 탐색이 시작됐다는 표시만 남긴다.
@@ -74,6 +79,14 @@ class PleosNaviGateway(context: Context) : NaviGateway {
     override val routeCancelled: Flow<Unit> = cancelFilter.cancelled
 
     private val listener = object : NaviHelperEventListener {
+        override fun onNavigationStatus(status: NavigationStatus) {
+            if (BuildConfig.DEBUG) Log.i("SJ-NAVI", "onNavigationStatus $status")
+        }
+
+        override fun onDestinationInfo(info: DestinationInfo) {
+            destinationFlow.tryEmit(info)
+        }
+
         override fun onTripInfo(info: TripInfo) {
             // 요청 없이 온 콜백(solicited=false)이 내비가 주는 실시간 갱신이다. 에뮬레이터 검증에 이 로그를 쓴다.
             if (BuildConfig.DEBUG) Log.i("SJ-NAVI", "onTripInfo eta=${info.eta}s distance=${info.distance}m solicited=${pendingTripError != null}")
@@ -186,7 +199,8 @@ class PleosNaviGateway(context: Context) : NaviGateway {
                 select {
                     result.onAwait { it }
                     started.onAwait {
-                        withTimeoutOrNull(ROUTE_STARTED_GRACE_MS) { result.await() } ?: Result.success(Unit)
+                        withTimeoutOrNull(ROUTE_STARTED_GRACE_MS) { result.await() }
+                            ?: verifyRoute(dest)
                     }
                 }
             } ?: Result.failure(NaviException("경로 탐색 응답 없음"))
@@ -201,6 +215,11 @@ class PleosNaviGateway(context: Context) : NaviGateway {
         return try {
             withTimeoutOrNull(5_000) {
                 connected.await()
+                // 이 내비는 지도 초기화 전 SDK 화면 요청도 무시한다. 공개 LAUNCHER 진입점으로
+                // 초기화를 시작한다. 경로/좌표는 Intent로 주입하지 않고 아래 SDK로만 요청한다.
+                context.packageManager.getLaunchIntentForPackage("ai.umos.maps.android.navigation.app")?.let { launch ->
+                    context.startActivity(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                }
                 navi.requestNavigationScreen(NavigationScreenRequest.Foreground)
                 Result.success(Unit)
             } ?: Result.failure(NaviException("내비 화면 연결 응답 없음"))
@@ -209,6 +228,34 @@ class PleosNaviGateway(context: Context) : NaviGateway {
         } catch (error: Exception) {
             Result.failure(error)
         }
+    }
+
+    override suspend fun awaitReady(dest: Place): Result<Unit> = try {
+        connected.await()
+        // 최초 상태 콜백을 보내지 않는 내비도 있다. 읽기 전용 조회에 새 응답이 와야 준비됐다고 본다.
+        // 시간 제한은 호출자(setRouteAndShowNavigation)가 적용하며, 경로 변경 요청은 반복하지 않는다.
+        while (requestTrip(dest) == null) delay(500)
+        Result.success(Unit)
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Exception) {
+        Result.failure(error)
+    }
+
+    private suspend fun verifyRoute(dest: Place): Result<Unit> {
+        val confirmed = withTimeoutOrNull(4_000) {
+            coroutineScope {
+                val active = async { routeActive() }
+                val destination = async {
+                    destinationFlow.onSubscription { navi.getDestinationInfo() }.first()
+                }
+                val info = destination.await()
+                active.await() == true && destinationMatches(dest,
+                    Place(info.latitude, info.longitude, info.name, info.poiId, info.poiSubId.orEmpty(), info.address))
+            }
+        } == true
+        if (BuildConfig.DEBUG) Log.i("SJ-NAVI", "route state and destination confirmed=$confirmed")
+        return if (confirmed) Result.success(Unit) else Result.failure(NaviException("내비 경로와 목적지를 확인하지 못했어요"))
     }
 
     /** 내비에 지금 안내 중인 경로가 있는지 묻는다. 응답은 onRouteStateInfo로 온다. 조회하지 못하면 null. */
