@@ -2,7 +2,7 @@
   "packageName": "com.smartjourney.vehicle",
   "appDescription": "Smart Journey tracks a planned restaurant visit and reports its waiting status; approvals are made in the app, not through Gleo.",
   "invokeWord": "스마트 저니",
-  "version": "0.2.12",
+  "version": "0.2.13",
   "actionCalls": [
     {
       "type": "function",

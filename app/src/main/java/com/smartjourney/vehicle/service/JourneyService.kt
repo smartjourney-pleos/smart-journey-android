@@ -9,6 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
 import com.smartjourney.vehicle.ui.createPromptPopup
+import com.smartjourney.vehicle.ui.popupStates
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
@@ -76,9 +77,10 @@ class JourneyService : Service() {
             }
         }
         scope.launch {
-            combine(engine.state, graph.demo.enabled, graph.signals.restricted, graph.popupViewport, graph.appVisible) { s, demo, restricted, bounds, visible ->
-                popup.render(s.prompt.takeIf { s.active && graph.consented.value && !visible }, demo, restricted, bounds)
-            }.collect { }
+            popupStates(engine.state, graph.demo.enabled, graph.signals.restricted, graph.popupViewport,
+                graph.appVisible, graph.consented).collect { state ->
+                popup.render(state.prompt, state.demo, state.restricted, state.viewport)
+            }
         }
         val prompts = engine.state.map { it.prompt }.distinctUntilChanged { a, b -> a?.id == b?.id }
         scope.launch {

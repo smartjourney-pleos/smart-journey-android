@@ -189,7 +189,7 @@ class AppGraph(private val context: Context) {
             return Result.failure(IllegalStateException("포그라운드 서비스를 시작할 수 없어요"))
         }
         val route = signals.setRoute(stops)
-        if (route.isFailure && !demo.enabled.value) {
+        if (route.isFailure) {
             JourneyService.stop(context)
             startError.value = "내비에 경로를 넣지 못했어요 (${route.exceptionOrNull()?.message})"
             return route
@@ -201,7 +201,6 @@ class AppGraph(private val context: Context) {
             startError.value = "접수 서버에 연결하지 못했어요 (${it.message})"
             return Result.failure(it)
         }
-        if (route.isFailure) Log.w(TAG, "내비 경로 입력 실패, 데모 신호로 계속: ${route.exceptionOrNull()?.message}")
         engine.start(partySize, stops, waitLimitMin.value)
         if (demo.enabled.value) demo.onJourneyStarted()
         return Result.success(Unit)
@@ -343,9 +342,7 @@ class AppSignals(
     /** 마지막 매장이 목적지, 그 앞 매장들이 경유지(최대 2개)다. */
     suspend fun setRoute(stops: List<Store>): Result<Unit> {
         val places = stops.map { it.toPlace() }
-        return navi.setRouteAndShowNavigation(places.last(), places.dropLast(1)) { error ->
-            Log.w(TAG, "경로는 설정됐지만 내비 화면 전환 요청에 실패했어요", error)
-        }
+        return navi.setRouteAndShowNavigation(places.last(), places.dropLast(1))
     }
 
     private fun Store.toPlace() = Place(latitude, longitude, name, poiId, poiSubId, address)
