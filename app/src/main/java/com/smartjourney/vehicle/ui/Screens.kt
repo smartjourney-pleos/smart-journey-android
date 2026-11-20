@@ -104,7 +104,7 @@ fun AppRoot(graph: AppGraph) {
                                 Tab.HOME -> tabStates.SaveableStateProvider(Tab.HOME) {
                                     HomeScreen(graph, journey, onShowStatus = { tab = Tab.STATUS }, modifier = Modifier.weight(1f))
                                 }
-                                Tab.STATUS -> Page(Modifier.weight(1f), scroll = false) { StatusScreen(graph, journey) }
+                                Tab.STATUS -> Page(Modifier.weight(1f), scroll = true) { StatusScreen(graph, journey) }
                                 Tab.ISSUES -> Page(Modifier.weight(1f)) { IssuesScreen(graph, issues) }
                             }
                         }
@@ -207,27 +207,35 @@ private fun SourceBadge(real: Boolean, label: String) =
 // ---------- 핵심 1. 동의 V-00 ----------
 
 @Composable
-private fun ConsentScreen(graph: AppGraph) {
+private fun ColumnScope.ConsentScreen(graph: AppGraph) {
     val support by graph.signals.support.collectAsStateWithLifecycle()
     var later by rememberSaveable { mutableStateOf(false) }
-    Text("도착에 맞춰 방문을 준비해요", style = Type.Headline)
-    Text("도착 예상과 대기를 비교하고, 승인한 접수만 요청해요.", style = Type.Body)
-    Panel {
-        Text("데이터 이용 안내", style = Type.Title)
-        Text("항목: 방문 매장·도착 예상·방문 인원·접수 상태·하차 인원", style = Type.Body)
-        Text("위치 좌표·이동 경로·차대번호는 보내지 않아요.", style = Type.Label)
-        Text("수신처: 스마트 저니 서버·접수한 매장\n보관: ${RETENTION_DAYS}일 후 삭제", style = Type.Label)
-        Text("현재는 시연용 접수이며 실제 매장에는 접수되지 않아요.", style = Type.Caption)
-        Text("거부해도 내비는 이용할 수 있어요. 홈에서 동의를 철회할 수 있어요.", style = Type.Label)
+    // 낮은·좁은 분할 창에서도 승인 CTA가 화면 밖으로 잘리지 않도록 안내 영역만 스크롤한다.
+    Column(
+        Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(PleosSpace.Section),
+    ) {
+        Text("도착에 맞춰 방문을 준비해요", style = Type.Headline)
+        Text("도착 예상과 대기를 비교하고, 승인한 접수만 요청해요.", style = Type.Body)
+        Panel {
+            Text("데이터 이용 안내", style = Type.Title)
+            Text("항목: 방문 매장·도착 예상·방문 인원·접수 상태·하차 인원", style = Type.Body)
+            Text("위치 좌표·이동 경로·차대번호는 보내지 않아요.", style = Type.Label)
+            Text("수신처: 스마트 저니 서버·접수한 매장\n보관: ${RETENTION_DAYS}일 후 삭제", style = Type.Label)
+            Text("현재는 시연용 접수이며 실제 매장에는 접수되지 않아요.", style = Type.Caption)
+            Text("거부해도 내비는 이용할 수 있어요. 홈에서 동의를 철회할 수 있어요.", style = Type.Label)
+        }
+        Panel {
+            Text("차량 기능", style = Type.Title)
+            Text(support?.let { "좌석 ${if (it.seat) "지원" else "미지원"} · 도어 ${if (it.door) "지원" else "미지원"} · 주행 상태 ${if (it.drivingState) "지원" else "미지원"}" } ?: "차량 기능 확인 중", style = Type.Label)
+            Text("좌석을 알 수 없으면 인원을 직접 입력해요. 주행 상태를 알 수 없으면 조작을 제한해요.", style = Type.Caption)
+        }
     }
-    Panel {
-        Text("차량 기능", style = Type.Title)
-        Text(support?.let { "좌석 ${if (it.seat) "지원" else "미지원"} · 도어 ${if (it.door) "지원" else "미지원"} · 주행 상태 ${if (it.drivingState) "지원" else "미지원"}" } ?: "차량 기능 확인 중", style = Type.Label)
-        Text("좌석을 알 수 없으면 인원을 직접 입력해요. 주행 상태를 알 수 없으면 조작을 제한해요.", style = Type.Caption)
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(PleosSpace.Gap)) {
+        BigButton("동의하고 시작", { graph.setConsent(true) }, Modifier.fillMaxWidth())
+        SmallButton("나중에", { later = true }, Modifier.fillMaxWidth())
+        if (later) Text("동의 전에는 접수를 준비하지 않아요. 내비는 그대로 이용해 주세요.", style = Type.Label)
     }
-    BigButton("동의하고 시작", { graph.setConsent(true) }, Modifier.fillMaxWidth())
-    SmallButton("나중에", { later = true }, Modifier.fillMaxWidth())
-    if (later) Text("동의 전에는 접수를 준비하지 않아요. 내비는 그대로 이용해 주세요.", style = Type.Label)
 }
 
 // ---------- 핵심 2. 홈(방문 계획) V-02 ----------
@@ -280,16 +288,24 @@ private fun HomeScreen(graph: AppGraph, journey: JourneyState, onShowStatus: () 
                         if (stores.isEmpty()) Text("방문지 정보를 불러오는 중이에요", style = Type.Label)
                         stores.forEach { store ->
                             val order = picked.indexOf(store.id)
-                            StoreRow(graph, store, order, waitLimit, enabled = picked.size < 3 || order >= 0) {
+                            StoreRow(graph, store, useServer, order, waitLimit, enabled = picked.size < 3 || order >= 0) {
                                 picked = if (order >= 0) picked - store.id else picked + store.id
                             }
                         }
                     }
                 }
-                if (maxWidth >= 1000.dp) Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                // 좁은 분할 창에서도 하단 "방문 시작" CTA를 고정하고 본문만 스크롤한다.
+                val bodyScroll = rememberScrollState()
+                if (maxWidth >= 1000.dp) Row(
+                    Modifier.fillMaxWidth().verticalScroll(bodyScroll),
+                    horizontalArrangement = Arrangement.spacedBy(20.dp),
+                ) {
                     Column(Modifier.weight(0.85f)) { settings() }
                     Column(Modifier.weight(1.15f)) { destinations() }
-                } else Column(verticalArrangement = Arrangement.spacedBy(12.dp)) { settings(); destinations() }
+                } else Column(
+                    Modifier.fillMaxWidth().verticalScroll(bodyScroll),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) { settings(); destinations() }
             }
             Surface(color = Palette.Surface, shape = RoundedCornerShape(20.dp)) {
                 Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -355,8 +371,9 @@ private fun CurrentVisitCard(graph: AppGraph, journey: JourneyState, onShowStatu
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun StoreRow(graph: AppGraph, store: Store, order: Int, waitLimit: Int, enabled: Boolean, onClick: () -> Unit) {
-    val queue by remember(store.id) { graph.backend.queueStatus(store.id) }.collectAsStateWithLifecycle(initialValue = null)
+private fun StoreRow(graph: AppGraph, store: Store, useServer: Boolean, order: Int, waitLimit: Int, enabled: Boolean, onClick: () -> Unit) {
+    // 백엔드 전환(앱 안 데이터 ↔ 서버) 시 이전 백엔드의 queueStatus 스트림에 묶이지 않도록 키를 함께 둔다.
+    val queue by remember(store.id, useServer) { graph.backend.queueStatus(store.id) }.collectAsStateWithLifecycle(initialValue = null)
     val selected = order >= 0
     Surface(
         Modifier.fillMaxWidth().toggleable(selected, enabled = enabled, role = Role.Checkbox) { onClick() },
@@ -449,7 +466,7 @@ private fun StatusScreen(graph: AppGraph, journey: JourneyState) {
         SmallButton(if (expanded) "기록 닫기" else "방문·기록 보기", { expanded = !expanded }, Modifier.weight(1f))
         if (journey.active) SmallButton("방문 끝내기", endVisitAction(graph, journey), Modifier.weight(1f))
     }
-    if (expanded) Column(Modifier.heightIn(max = 240.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    if (expanded) Panel {
         Text("방문을 끝내도 접수는 취소되지 않아요.", style = Type.Caption)
         journey.stops.forEachIndexed { i, item -> Text("${i + 1}번째 · ${item.store.name}", style = Type.Label) }
         journey.log.takeLast(8).forEach { Text(it, style = Type.Caption) }

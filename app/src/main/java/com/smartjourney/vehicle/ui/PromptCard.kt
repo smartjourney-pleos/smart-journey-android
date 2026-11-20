@@ -140,7 +140,10 @@ class CountdownRing @JvmOverloads constructor(
         canvas.drawOval(inset, inset, width - inset, height - inset, paint)
         paint.color = ink
         canvas.drawArc(inset, inset, width - inset, height - inset, -90f, 360f * progress, false, paint)
-        paint.style = Paint.Style.FILL; paint.typeface = ringFont; paint.textSize = 16f * resources.displayMetrics.scaledDensity
+        paint.style = Paint.Style.FILL; paint.typeface = ringFont
+        paint.textSize = android.util.TypedValue.applyDimension(
+            android.util.TypedValue.COMPLEX_UNIT_SP, 16f, resources.displayMetrics,
+        )
         paint.textAlign = Paint.Align.CENTER
         val baseline = height / 2f - (paint.ascent() + paint.descent()) / 2f
         canvas.drawText(seconds.toString(), width / 2f, baseline, paint)
