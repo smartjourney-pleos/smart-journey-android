@@ -70,9 +70,21 @@ class KeystoreAesGcmCipher(
     private val lock = Any()
     private val codec = AesGcmCodec(::getOrCreateKey)
 
-    override fun encrypt(plainText: String): String? = codec.encrypt(plainText)
+    override fun encrypt(plainText: String): String? {
+        codec.encrypt(plainText)?.let { return it }
+        // OS 업데이트·보안 상태 변경으로 키가 영구 무효화되었을 때 1회 재생성해 저장 불능 상태를 복구한다.
+        deleteKey()
+        return codec.encrypt(plainText)
+    }
 
     override fun decrypt(cipherText: String): String? = codec.decrypt(cipherText)
+
+    private fun deleteKey() = synchronized(lock) {
+        runCatching {
+            val keyStore = KeyStore.getInstance(ANDROID_KEY_STORE).apply { load(null) }
+            if (keyStore.containsAlias(keyAlias)) keyStore.deleteEntry(keyAlias)
+        }
+    }
 
     private fun getOrCreateKey(): SecretKey = synchronized(lock) {
         val keyStore = KeyStore.getInstance(ANDROID_KEY_STORE).apply { load(null) }

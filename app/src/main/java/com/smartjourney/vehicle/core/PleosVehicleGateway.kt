@@ -15,6 +15,7 @@ import ai.pleos.playground.vehicle.constant.area.DoorValue
 import ai.pleos.playground.vehicle.listener.DoorPositionListener
 import ai.pleos.playground.vehicle.listener.SeatBeltBuckledStateListener
 import ai.pleos.playground.vehicle.listener.SeatOccupancyListener
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -148,38 +149,50 @@ class PleosVehicleGateway(context: Context) : VehicleGateway {
             lastError = info.category
         }
 
-        val seats = runCatching {
+        // withTimeoutOrNull 등 코루틴 취소(TimeoutCancellationException 포함)는 삼키지 않고 즉시 전파한다.
+        suspend fun <T> queryCapability(where: String, default: T, block: suspend () -> T): T =
+            try {
+                block()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                recordFailure(where, e)
+                default
+            }
+
+        val seats = queryCapability("좌석 점유 지원 조회", emptyList()) {
             suspendCancellableCoroutine<List<SeatArea>> { c ->
                 seat.checkSeatOccupancyCapabilities(
-                    { config, areas -> c.resume(if (config.accessType.canRead()) areas else emptyList()) },
-                    { e -> recordFailure("좌석 점유 지원 조회", e); c.resume(emptyList()) }
+                    { config, areas -> if (c.isActive) c.resume(if (config.accessType.canRead()) areas else emptyList()) },
+                    { e -> recordFailure("좌석 점유 지원 조회", e); if (c.isActive) c.resume(emptyList()) }
                 )
             }
-        }.onFailure { if (it is Exception) recordFailure("좌석 점유 지원 조회", it) }.getOrDefault(emptyList())
+        }
 
-        val belts = runCatching {
+        val belts = queryCapability("벨트 지원 조회", emptyList()) {
             suspendCancellableCoroutine<List<SeatArea>> { c ->
                 seat.checkSeatBeltBuckledCapabilities(
-                    { config, areas -> c.resume(if (config.accessType.canRead()) areas else emptyList()) },
-                    { e -> recordFailure("벨트 지원 조회", e); c.resume(emptyList()) }
+                    { config, areas -> if (c.isActive) c.resume(if (config.accessType.canRead()) areas else emptyList()) },
+                    { e -> recordFailure("벨트 지원 조회", e); if (c.isActive) c.resume(emptyList()) }
                 )
             }
-        }.onFailure { if (it is Exception) recordFailure("벨트 지원 조회", it) }.getOrDefault(emptyList())
+        }
 
-        val doors = runCatching {
+        val doors = queryCapability("도어 지원 조회", emptyMap()) {
             suspendCancellableCoroutine<Map<DoorArea, Int>> { c ->
                 door.checkDoorPositionCapabilities(
                     { config, bounds ->
+                        if (!c.isActive) return@checkDoorPositionCapabilities
                         if (!config.accessType.canRead()) c.resume(emptyMap())
                         else c.resume(
                             bounds.filterKeys { area -> area.values.all { it in passengerDoors } }
                                 .mapValues { (_, b) -> b.minValue }
                         )
                     },
-                    { e -> recordFailure("도어 지원 조회", e); c.resume(emptyMap()) }
+                    { e -> recordFailure("도어 지원 조회", e); if (c.isActive) c.resume(emptyMap()) }
                 )
             }
-        }.onFailure { if (it is Exception) recordFailure("도어 지원 조회", it) }.getOrDefault(emptyMap())
+        }
 
         return VehicleCaps(
             seatAreas = seats,
@@ -253,12 +266,18 @@ class PleosVehicleGateway(context: Context) : VehicleGateway {
 
     private suspend fun readBool(where: String, call: ((Boolean?) -> Unit, (Exception) -> Unit) -> Unit): Boolean? =
         suspendCancellableCoroutine { c ->
-            call({ c.resume(it) }, { e -> logFailure(where, e); c.resume(null) })
+            call(
+                { if (c.isActive) c.resume(it) },
+                { e -> logFailure(where, e); if (c.isActive) c.resume(null) },
+            )
         }
 
     private suspend fun readInt(where: String, call: ((Int?) -> Unit, (Exception) -> Unit) -> Unit): Int? =
         suspendCancellableCoroutine { c ->
-            call({ c.resume(it) }, { e -> logFailure(where, e); c.resume(null) })
+            call(
+                { if (c.isActive) c.resume(it) },
+                { e -> logFailure(where, e); if (c.isActive) c.resume(null) },
+            )
         }
 
     private fun List<Flow<Boolean>>.sumTrue(): Flow<Int> =

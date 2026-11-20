@@ -223,4 +223,27 @@ class JourneyEngineTest {
         assertEquals(StopPhase.SEATED, restoredEngine.state.value.stops[0].phase)
         assertTrue(restoredEngine.state.value.active)
     }
+
+    @Test
+    fun 즉시_실행_디스패처에서도_엔진_생성_직후_저장된_여정을_지우지_않고_복원한다() = runTest(kotlinx.coroutines.test.UnconfinedTestDispatcher()) {
+        val storage = InMemoryJourneyStorage()
+        val original = JourneyEngine(signals, backend, backgroundScope, storage = storage, now = { testScheduler.currentTime })
+        original.start(partySize = 3, stops = backend.stores().take(2), waitLimitMin = 40)
+        assertTrue(storage.restore() != null)
+
+        // Dispatchers.Main.immediate처럼 init의 collect가 즉시 실행되는 환경에서 새 엔진을 생성해도
+        // restore() 호출 전에 기존 저장 여정이 삭제되면 안 된다.
+        val relaunched = JourneyEngine(signals, backend, backgroundScope, storage = storage, now = { testScheduler.currentTime })
+        assertTrue("init 단계의 초기 빈 상태로 저장소가 초기화되면 안 된다", storage.restore() != null)
+
+        assertTrue(relaunched.restore())
+        assertTrue(relaunched.state.value.active)
+        assertEquals(3, relaunched.state.value.partySize)
+        assertEquals(40, relaunched.state.value.waitLimitMin)
+        assertEquals(2, relaunched.state.value.stops.size)
+
+        // 복원된 여정을 종료하면 저장소도 정상적으로 정리되어야 한다.
+        relaunched.end()
+        assertNull(storage.restore())
+    }
 }

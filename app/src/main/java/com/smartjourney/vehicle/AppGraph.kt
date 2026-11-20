@@ -35,6 +35,7 @@ import com.smartjourney.vehicle.voice.LateVoiceResult
 import kotlinx.coroutines.channels.Channel
 import com.smartjourney.vehicle.voice.VoiceDecision
 import com.smartjourney.vehicle.voice.VoiceIssue
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -269,8 +270,16 @@ class AppSignals(
         val vehicle = realVehicle ?: return@async null
         var caps: VehicleCaps? = null
         for (attempt in 1..CAPS_ATTEMPTS) {
-            caps = withTimeoutOrNull(3_000) { runCatching { vehicle.capabilities() }.getOrNull() }
-            if (caps != null && (caps.seatSupported || caps.doorSupported)) break
+            caps = withTimeoutOrNull(3_000) {
+                try {
+                    vehicle.capabilities()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    null
+                }
+            }
+            if (caps != null && caps.seatSupported && caps.doorSupported) break
             if (caps != null && !caps.retryableFailure) break
             if (attempt < CAPS_ATTEMPTS) delay(2_000L * attempt)
         }
