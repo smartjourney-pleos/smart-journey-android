@@ -57,7 +57,7 @@ class VisitV4Test {
         runCurrent()
         val prompt = engine.state.value.prompt!!
         assertNull(prompt.waitLimitMin)
-        assertEquals("42dot까지 20분, 대기는 30분이에요. 4명으로 지금 웨이팅을 걸까요?", prompt.spokenText())
+        assertEquals("42dot까지 20분, 대기 30분이에요. 4명 걸까요? 응이나 나중에라고 말해 주세요.", prompt.spokenText())
         listOf("응", "걸어 줘", "응, 걸어 줘!").forEach { assertEquals(it, VoiceDecision.APPROVE, voiceDecision(it, prompt.kind)) }
         listOf("응 걸지 마", "엄마 배고파", "걸어 볼까").forEach { assertNull(it, voiceDecision(it, prompt.kind)) }
         assertTrue(engine.respondByVoice(prompt.id, true))
@@ -71,7 +71,7 @@ class VisitV4Test {
         val engine = engine(waitLimitMin = 30)
         val prompt = engine.state.value.prompt!! // 30 ≤ 90 − 10 이라 바로 묻는다
         assertEquals(30, prompt.waitLimitMin)
-        assertEquals("42dot 대기가 90분이에요. 그래도 걸까요?", prompt.spokenText())
+        assertEquals("42dot 대기 90분이에요. 그래도 걸까요? 응이나 나중에라고 말해 주세요.", prompt.spokenText())
 
         assertTrue(engine.respondByVoice(prompt.id, false))
         runCurrent()

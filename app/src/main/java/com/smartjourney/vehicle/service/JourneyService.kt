@@ -25,11 +25,15 @@ import com.smartjourney.vehicle.graph
 import com.smartjourney.vehicle.voice.PleosVoiceGateway
 import com.smartjourney.vehicle.voice.LateVoiceResultController
 import com.smartjourney.vehicle.voice.VoiceIssue
+import com.smartjourney.vehicle.voice.VoiceNoticeAnnouncer
 import com.smartjourney.vehicle.voice.VoicePromptController
+import com.smartjourney.vehicle.voice.voiceUnavailableSpokenText
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
@@ -90,13 +94,32 @@ class JourneyService : Service() {
                     visualFallback = !android.provider.Settings.canDrawOverlays(this@JourneyService) || graph.popupViewport.value == null)
             }
         }
+        // 주행 중 오버레이 카드가 없는 환경에서도 접수 결과·미실행 안내를 귀로 확인할 수 있게 직렬 TTS 채널을 둔다.
+        val spokenNotices = Channel<Pair<String, Boolean>>(capacity = 4, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+        val noticeAnnouncer = VoiceNoticeAnnouncer(
+            voice = voice,
+            state = engine.state,
+            consented = { graph.consented.value },
+            gleoQuietUntil = graph.gleoQuietUntil,
+            speechMutex = speechMutex,
+        )
+        scope.launch {
+            for ((message, skipIfPromptActive) in spokenNotices) {
+                noticeAnnouncer.announce(message, skipIfPromptActive = skipIfPromptActive)
+            }
+        }
         // 주행 규제 중 터치 승인은 막고 음성 응답을 유지한다. 팝업은 별도 권한을 허용한 경우에만 표시한다.
         scope.launch {
             val controller = VoicePromptController(voice, { engine.state.value.prompt }, graph::respondByVoice,
-                onSpoken = { graph.spokenPromptId.value = it },
-                onUnavailable = {
-                    graph.voiceIssue.value = it
-                    Notices.voiceUnavailable(this@JourneyService, it)
+                onSpeaking = { engine.onPromptSpeaking(it) },
+                onSpoken = {
+                    graph.spokenPromptId.value = it
+                    engine.onPromptSpoken(it)
+                },
+                onUnavailable = { issue ->
+                    graph.voiceIssue.value = issue
+                    Notices.voiceUnavailable(this@JourneyService, issue)
+                    voiceUnavailableSpokenText(issue)?.let { spokenNotices.trySend(it to false) }
                 })
             combine(prompts, graph.voiceProbePromptId) { prompt, probeId -> prompt?.takeUnless { it.id == probeId } }
                 .distinctUntilChanged { a, b -> a?.id == b?.id }
@@ -110,7 +133,12 @@ class JourneyService : Service() {
                 stopSelf()
             }
         }
-        scope.launch { engine.notices.collect { Notices.result(this@JourneyService, it) } }
+        scope.launch {
+            engine.notices.collect { message ->
+                Notices.result(this@JourneyService, message)
+                spokenNotices.trySend(message to true)
+            }
+        }
         scope.launch {
             val announcer = LateVoiceResultController(voice, engine.state, graph.gleoQuietUntil, speechMutex,
                 graph.gleoActions::shouldAnnounce, graph.gleoActions::markAnnounced,
@@ -190,7 +218,8 @@ object Notices {
         val notification = builder(context, if (visualFallback) CH_VISUAL_PROMPT else CH_PROMPT, text.title, "${text.detail} · 음성으로 답해 주세요")
             .setPriority(if (visualFallback) NotificationCompat.PRIORITY_HIGH else NotificationCompat.PRIORITY_LOW)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
-            .setSilent(!visualFallback)
+            // 질문 TTS와 시스템 알림음이 겹치지 않도록 시각 배너만 띄우고 소리는 끈다.
+            .setSilent(true)
             .setOnlyAlertOnce(true)
             .setContentIntent(PendingIntent.getActivity(context, 0, Intent(context, MainActivity::class.java), IMMUTABLE))
             .setTimeoutAfter((prompt.expiresAt?.minus(System.currentTimeMillis()) ?: 60_000L).coerceAtLeast(1))
