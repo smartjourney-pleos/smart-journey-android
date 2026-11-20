@@ -34,6 +34,7 @@ import java.time.format.DateTimeFormatter
 import java.util.UUID
 
 const val WAITING_PROMPT_TIMEOUT_MS = 10_000L
+const val PROMPT_SPEECH_ALLOWANCE_MS = 15_000L
 private const val INPUT_STALE_MS = 60_000L
 private const val ETA_PERIOD_MS = 60_000L
 
@@ -83,6 +84,8 @@ class JourneyEngine(
     private var arrivalReported = false
     private var manualPrompted = false
     private var promptTimeout: Job? = null
+    private var speakingExtendedPromptId: String? = null
+    private var spokenExtendedPromptId: String? = null
     private var vehicle = Triple(false, false, 0) // 주행 중, 문 열림, 점유 수
     private var lastInputAt = 0L
     private var lastEtaMin: Int? = null
@@ -290,9 +293,10 @@ class JourneyEngine(
     private fun showGoldenTime(stop: StopState, queue: QueueStatus, remainingMin: Int) {
         gate.onPrompted()
         updateStop { it.copy(phase = StopPhase.PROMPTED) }
+        val promptId = newPromptId()
         show(
             Prompt(
-                id = newPromptId(), kind = Prompt.Kind.GOLDEN_TIME, storeName = stop.store.name,
+                id = promptId, kind = Prompt.Kind.GOLDEN_TIME, storeName = stop.store.name,
                 partySize = _state.value.partySize, waitMin = queue.estimatedWaitMin, remainingMin = remainingMin,
                 expiresAt = now() + WAITING_PROMPT_TIMEOUT_MS,
                 waitLimitMin = _state.value.waitLimitMin.takeIf { queue.estimatedWaitMin > it },
@@ -300,7 +304,46 @@ class JourneyEngine(
         )
         promptTimeout = launchInStop {
             delay(WAITING_PROMPT_TIMEOUT_MS)
-            defer()
+            defer(promptId)
+        }
+    }
+
+    /**
+     * 앱 자체 TTS가 질문을 읽기 시작할 때 질문 ID당 1회만 발화 상한(15초)을 확보한다.
+     * 콜드 부팅 직후 TTS 초기화·합성 지연으로 문장을 다 읽기 전에 10초 만료가 먼저 끊기는 현상을 막는다.
+     */
+    fun onPromptSpeaking(promptId: String): Boolean {
+        val prompt = _state.value.prompt ?: return false
+        val expiresAt = prompt.expiresAt ?: return false
+        if (prompt.id != promptId || now() >= expiresAt || speakingExtendedPromptId == promptId) return false
+        speakingExtendedPromptId = promptId
+        reschedulePromptDeadline(promptId, PROMPT_SPEECH_ALLOWANCE_MS)
+        return true
+    }
+
+    /**
+     * 앱 자체 TTS가 질문을 끝까지 읽은 직후 응답 창(10초)을 질문 ID당 최대 1회만 다시 시작한다.
+     * 실제 차량 온디바이스 TTS 발화가 끝난 시점부터 운전자에게 온전한 STT 응답 시간을 보장하며,
+     * Gleo 상태 조회 등 외부 경로에서는 호출하지 않는다.
+     */
+    fun onPromptSpoken(promptId: String): Boolean {
+        val prompt = _state.value.prompt ?: return false
+        val expiresAt = prompt.expiresAt ?: return false
+        if (prompt.id != promptId || now() >= expiresAt || spokenExtendedPromptId == promptId) return false
+        spokenExtendedPromptId = promptId
+        reschedulePromptDeadline(promptId, WAITING_PROMPT_TIMEOUT_MS)
+        return true
+    }
+
+    private fun reschedulePromptDeadline(promptId: String, durationMs: Long) {
+        val nextExpiresAt = now() + durationMs
+        _state.update { s ->
+            if (s.prompt?.id == promptId) s.copy(prompt = s.prompt.copy(expiresAt = nextExpiresAt)) else s
+        }
+        promptTimeout?.cancel()
+        promptTimeout = launchInStop {
+            delay(durationMs)
+            defer(promptId)
         }
     }
 
@@ -315,7 +358,7 @@ class JourneyEngine(
                 val waiting = backend.register(stop.store.id, partySize, method, idempotencyKey = prompt.id)
                 updateStop { it.copy(phase = StopPhase.REGISTERED, waiting = waiting, submission = SubmissionStatus.CONFIRMED) }
                 log("접수 완료 · ${stop.store.name} ${partySize}명 · 번호 ${waiting.ticketNo} · 앞에 ${waiting.aheadTeams}팀")
-                notice("${if (backend.isDemo) "데모 접수예요. " else ""}${stop.store.name}에 ${partySize}명으로 등록했어요. 앞에 ${waiting.aheadTeams}팀 있어요")
+                notice("${if (backend.isDemo) "데모 접수예요. " else ""}${stop.store.name}에 ${partySize}명으로 등록했어요. 번호 ${waiting.ticketNo}번, 앞에 ${waiting.aheadTeams}팀 있어요")
                 _state.value.remainingMin?.let(::sendEta)
                 launchInStop { backend.waiting(waiting.waitingId).collect(::onWaiting) }
                 startDetectorIfReady()

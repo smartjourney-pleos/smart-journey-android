@@ -128,4 +128,36 @@ class VoicePromptControllerTest {
         VoicePromptController(voice, { expired }, { _, _ -> fail("expired response"); false }, {}, now = { 100 }).handle(expired)
         assertEquals(listOf("stop"), voice.events)
     }
+
+    @Test fun 모호한_오인식_표현은_거부하고_명확한_보류_표현은_보류로_인식한다() {
+        // "그렇죠"(걸어 줘 오인식), "괜찮아요"(긍정/거절 양의적)는 절대 승인·보류로 단정하지 않는다.
+        listOf("그렇죠", "괜찮아요", "괜찮아", "글쎄요").forEach {
+            assertNull(it, voiceDecision(it, Prompt.Kind.GOLDEN_TIME))
+        }
+        listOf("안 걸래", "안 할게요", "미뤄 줘", "미룰게요", "패스").forEach {
+            assertEquals(it, VoiceDecision.DEFER, voiceDecision(it, Prompt.Kind.GOLDEN_TIME))
+        }
+    }
+
+    @Test fun 재질문_문구는_질문_유형에_맞게_안내한다() = runTest {
+        val partyPrompt = Prompt("p-party", Prompt.Kind.PARTY_CHANGE, "42dot", partySize = 4, newPartySize = 3)
+        val spokenTexts = mutableListOf<String>()
+        val voice = object : VoiceGateway {
+            val replies = ArrayDeque(listOf(Result.success("글쎄"), Result.success("그대로")))
+            override suspend fun speak(text: String): Result<Unit> { spokenTexts += text; return Result.success(Unit) }
+            override suspend fun listen(): Result<String?> = replies.removeFirstOrNull() ?: Result.success(null)
+            override fun stop() = Unit
+            override fun release() = Unit
+        }
+        val decisions = mutableListOf<VoiceDecision>()
+        VoicePromptController(voice, { partyPrompt }, { _, d -> decisions += d; true }, {}).handle(partyPrompt)
+
+        assertEquals(2, spokenTexts.size)
+        assertTrue("인원 변경 재질문에 바꾸기/그대로 안내가 포함되어야 한다", spokenTexts[1].contains("바꿔 줘"))
+        assertFalse("인원 변경 재질문에 웨이팅 걸기 문구가 섞이면 안 된다", spokenTexts[1].contains("걸려면"))
+        assertEquals(listOf(VoiceDecision.DEFER), decisions)
+
+        assertTrue(Prompt("m", Prompt.Kind.MANUAL_ARRIVAL, "A", 2).retrySpokenText().contains("도착했어요"))
+        assertTrue(Prompt("c", Prompt.Kind.CALLED, "A", 2, ticketNo = 5).retrySpokenText().contains("확인"))
+    }
 }

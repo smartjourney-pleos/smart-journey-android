@@ -246,4 +246,41 @@ class JourneyEngineTest {
         relaunched.end()
         assertNull(storage.restore())
     }
+
+    @Test
+    fun 앱_TTS_발화_시작과_완료_시_질문당_1회씩만_응답_창을_확보하고_이후_만료된다() = runTest {
+        val engine = startedEngine()
+        signals.remaining.value = 20 * 60
+        runCurrent()
+        val prompt = engine.state.value.prompt!!
+        val initialExpiresAt = prompt.expiresAt!!
+
+        // 1) TTS 발화 시작 시 콜드 부팅 지연을 감안해 상한(15초)을 1회 확보한다.
+        assertTrue(engine.onPromptSpeaking(prompt.id))
+        assertEquals(false, engine.onPromptSpeaking(prompt.id))
+        assertEquals(initialExpiresAt - WAITING_PROMPT_TIMEOUT_MS + PROMPT_SPEECH_ALLOWANCE_MS, engine.state.value.prompt!!.expiresAt)
+
+        // 2) 콜드 부팅 + TTS 발화가 11초 걸려도 발화 도중 잘리지 않고, 완료 시점부터 10초 응답 창을 시작한다.
+        advanceTimeBy(11_000)
+        runCurrent()
+        assertTrue("TTS 발화 중에는 질문이 유지되어야 한다", engine.state.value.prompt != null)
+        assertTrue(engine.onPromptSpoken(prompt.id))
+        val extendedExpiresAt = engine.state.value.prompt!!.expiresAt!!
+        assertEquals(11_000L + WAITING_PROMPT_TIMEOUT_MS, extendedExpiresAt)
+
+        // 같은 질문 ID로 중복 호출해도 무한 연장되면 안 된다.
+        advanceTimeBy(2_000)
+        runCurrent()
+        assertEquals(false, engine.onPromptSpoken(prompt.id))
+        assertEquals(extendedExpiresAt, engine.state.value.prompt!!.expiresAt)
+
+        // 연장 시점으로부터 10초 직전까지는 열려 있고, 10초가 지나면 자동 보류된다.
+        advanceTimeBy(7_999)
+        runCurrent()
+        assertTrue(engine.state.value.prompt != null)
+        advanceTimeBy(1)
+        runCurrent()
+        assertNull(engine.state.value.prompt)
+        assertEquals(StopPhase.PLANNED, engine.state.value.current?.phase)
+    }
 }
