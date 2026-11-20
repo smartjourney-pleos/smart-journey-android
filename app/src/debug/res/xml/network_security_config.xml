@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 디버그 빌드 전용: 에뮬레이터에서 호스트의 로컬 서버(10.0.2.2)만 평문 HTTP를 허용한다. 릴리스에는 들어가지 않는다. -->
+<!-- 디버그 빌드 전용: 기본 평문 차단을 유지하되 에뮬레이터에서 호스트 로컬 서버(10.0.2.2)만 예외 허용한다. 릴리스에는 포함되지 않는다. -->
 <network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
     <domain-config cleartextTrafficPermitted="true">
         <domain includeSubdomains="false">10.0.2.2</domain>
     </domain-config>

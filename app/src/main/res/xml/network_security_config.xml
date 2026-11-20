@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 기본(릴리스 포함) 네트워크 보안 정책: 평문 HTTP/WS를 전면 차단하고 시스템 신뢰 인증서 기반 HTTPS/WSS만 허용한다. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+</network-security-config>
