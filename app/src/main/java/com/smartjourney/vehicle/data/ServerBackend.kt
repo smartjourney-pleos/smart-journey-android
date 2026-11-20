@@ -27,10 +27,12 @@ class ServerException(val status: Int, val apiCode: String?, message: String) : 
  * smart-journey-server 연동 (REST, 서버 docs/server/02_기능_API_명세.md).
  * 매장 POS 조작은 smart-journey-web에서 하고, 차량 앱은 그 결과를 3초마다 조회해 반영한다.
  * ponytail: STOMP 대신 REST 조회. 지연이 문제가 되면 /topic/waitings/{id} 구독으로 바꾼다.
- * ponytail: 기기 토큰은 메모리에만 둔다(프로세스가 바뀌면 다시 등록). 실서비스는 Keystore로 암호화해 저장한다.
+ * 기기 토큰은 [tokenStore]를 통해 Android Keystore AES-GCM 암호화 저장소에 보관하며 동의 철회·401 시 폐기한다.
  */
 class ServerBackend(
     private val baseUrl: String,
+    /** 기기 토큰 암호화 저장소. 기본값은 테스트용 메모리 저장소다. */
+    private val tokenStore: DeviceTokenStore = InMemoryDeviceTokenStore(),
     /** 사용자가 앱에서 동의한 고지 버전. null이면 동의 전·철회 상태라 서버를 부르지 않는다. */
     private val consentVersion: () -> String?,
 ) : WaitingBackend {
@@ -40,6 +42,11 @@ class ServerBackend(
 
     @Volatile private var token: String? = null
     @Volatile private var journeyId: Long? = null
+
+    fun clearToken() {
+        token = null
+        tokenStore.clear()
+    }
 
     override suspend fun startJourney(partySize: Int, storeIds: List<Long>, sensed: Boolean) {
         val body = JSONObject().put("partySize", partySize).put("partySource", if (sensed) "SENSOR" else "MANUAL")
@@ -116,15 +123,22 @@ class ServerBackend(
     private suspend fun ensureToken(): String {
         val agreed = consentVersion()
         if (agreed == null) {
-            token = null
+            clearToken()
             throw IOException("데이터 전송 동의가 필요해요")
         }
         token?.let { return it }
+        tokenStore.load()?.takeIf { it.isNotBlank() }?.let {
+            token = it
+            return it
+        }
         // 사용자가 본 고지와 서버의 현재 고지가 같을 때만 등록한다. 다르면 다시 동의받아야 한다.
         val version = JSONObject(raw("GET", "/api/v1/consent/notice", null, null, auth = false)).getString("version")
         if (version != agreed) throw IOException("서버의 고지 버전($version)이 앱에서 동의한 버전($agreed)과 달라요")
         val registered = JSONObject(raw("POST", "/api/v1/devices", JSONObject().put("consentVersion", agreed), null, auth = false))
-        return registered.getString("deviceToken").also { token = it }
+        return registered.getString("deviceToken").also {
+            token = it
+            tokenStore.save(it)
+        }
     }
 
     private suspend fun request(method: String, path: String, body: JSONObject? = null, idempotencyKey: String? = null): JSONObject =
@@ -150,7 +164,7 @@ class ServerBackend(
                 val status = connection.responseCode
                 val text = (if (status < 400) connection.inputStream else connection.errorStream)
                     ?.bufferedReader()?.use { it.readText() }.orEmpty()
-                if (status == 401) token = null // 서버 DB가 초기화됐으면 다음 요청에서 다시 등록한다
+                if (status == 401) clearToken() // 서버 DB가 초기화됐으면 저장 토큰도 폐기하고 다음 요청에서 재등록한다
                 if (status >= 400) {
                     val error = runCatching { JSONObject(text) }.getOrNull()
                     throw ServerException(status, error?.optString("code"), error?.optString("message") ?: "HTTP $status")

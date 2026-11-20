@@ -50,6 +50,7 @@ import com.smartjourney.vehicle.BuildConfig
 import com.smartjourney.vehicle.EtaSource
 import com.smartjourney.vehicle.R
 import com.smartjourney.vehicle.RETENTION_DAYS
+import com.smartjourney.vehicle.core.pleosMarketUpdateUri
 import com.smartjourney.vehicle.core.readServiceVersions
 import com.smartjourney.vehicle.domain.AlightDetector
 import com.smartjourney.vehicle.domain.ArrivalResult
@@ -558,7 +559,11 @@ private fun ArrivalPanel(graph: AppGraph, journey: JourneyState, stop: StopState
 
 // ---------- 핵심 6. 예외·미지원 V-15 ----------
 
-private data class Issue(val title: String, val detail: String)
+private data class Issue(
+    val title: String,
+    val detail: String,
+    val marketPackageName: String? = null,
+)
 
 @Composable
 private fun rememberIssues(graph: AppGraph, journey: JourneyState): List<Issue> {
@@ -586,14 +591,24 @@ private fun rememberIssues(graph: AppGraph, journey: JourneyState): List<Issue> 
         startError?.let { add(Issue("내비 연결 실패", it)) }
         if (!useDemo && support?.seat == false) add(Issue("좌석 센서 미지원", "방문 인원은 직접 입력해 주세요."))
         if (!useDemo && support?.door == false) add(Issue("도어 신호 미지원", "하차는 자동으로 추정하지 않고 직접 확인해요."))
-        versions.filterNot { it.ok }.forEach {
-            add(Issue("차량 소프트웨어 업데이트 필요", "내비·차량 기능 연결이 원활하지 않을 수 있어요. 차량 소프트웨어를 최신으로 업데이트해 주세요."))
+        versions.filterNot { it.ok }.forEach { service ->
+            add(
+                Issue(
+                    title = "${service.label} 서비스 업데이트 필요",
+                    detail = "현재 ${service.installed ?: "미설치"} · 권장 ${service.required} 이상. 최신 버전이 아니면 일부 차량·내비 기능이 제한될 수 있어요.",
+                    marketPackageName = service.packageName.takeIf { it.isNotBlank() },
+                ),
+            )
         }
     }
 }
 
 @Composable
 private fun IssuesScreen(graph: AppGraph, issues: List<Issue>) {
+    val context = LocalContext.current
+    var deferredPackages by rememberSaveable { mutableStateOf(listOf<String>()) }
+    var marketFallbackNotice by rememberSaveable { mutableStateOf<String?>(null) }
+
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("확인이 필요한 항목", style = Type.Label)
         Text(if (issues.isEmpty()) "확인할 문제가 없어요" else "안전하게 정차한 뒤 확인해 주세요", style = Type.Headline)
@@ -602,6 +617,32 @@ private fun IssuesScreen(graph: AppGraph, issues: List<Issue>) {
         Panel {
             Text(issue.title, style = Type.Title)
             Text(issue.detail, style = Type.Body)
+            val pkg = issue.marketPackageName
+            if (pkg != null) {
+                if (pkg in deferredPackages) {
+                    Text("업데이트를 나중에 진행해요. 그 전까지는 수동 입력 모드로 이용할 수 있어요.", style = Type.Caption)
+                } else {
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        SmallButton("마켓에서 업데이트", {
+                            val intent = android.content.Intent(
+                                android.content.Intent.ACTION_VIEW,
+                                android.net.Uri.parse(pleosMarketUpdateUri(pkg)),
+                            )
+                            runCatching { context.startActivity(intent) }.onFailure {
+                                // Pleos App Market이 없는 기기에서는 크래시 대신 대체 안내를 표시한다.
+                                marketFallbackNotice = "Pleos App Market을 열지 못했어요. 차량 설정 또는 마켓에서 직접 업데이트해 주세요."
+                            }
+                        })
+                        SmallButton("나중에", { deferredPackages = deferredPackages + pkg })
+                    }
+                }
+            }
+        }
+    }
+    marketFallbackNotice?.let { notice ->
+        Panel {
+            Text("마켓 연결 안내", style = Type.Title)
+            Text(notice, style = Type.Body)
         }
     }
     val voiceIssue by graph.voiceIssue.collectAsStateWithLifecycle()

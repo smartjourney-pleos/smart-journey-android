@@ -1,5 +1,6 @@
 package com.smartjourney.vehicle.core
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -31,5 +32,13 @@ class RuntimeVersionsTest {
         assertFalse(ServiceVersion("Vehicle", "2.3.2", null, "2.3.13").ok)
         assertFalse(ServiceVersion("Vehicle", "2.3.2", "2.3.9", "2.3.13").ok)
         assertTrue(ServiceVersion("Vehicle", "2.3.2", "2.3.22", "2.3.13").ok)
+    }
+
+    @Test
+    fun buildsPleosAppMarketUpdateUri() {
+        assertEquals(
+            "market://detail?package=ai.pleos.playground.service.vehicle",
+            pleosMarketUpdateUri(" ai.pleos.playground.service.vehicle "),
+        )
     }
 }
