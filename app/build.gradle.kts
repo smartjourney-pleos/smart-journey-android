@@ -37,14 +37,21 @@ android {
         }
     }
 
+    val releaseServerUrl = secret("SJ_RELEASE_SERVER_URL")?.trim().orEmpty().also { url ->
+        require(url.isEmpty() || url.startsWith("https://")) {
+            "SJ_RELEASE_SERVER_URL은 반드시 https:// 주소여야 합니다: $url"
+        }
+    }
+    val escapedReleaseServerUrl = releaseServerUrl.replace("\\", "\\\\").replace("\"", "\\\"")
+
     buildTypes {
         debug {
             // 에뮬레이터에서 호스트의 smart-journey-server. 평문 HTTP는 debug 소스셋의 네트워크 설정에서 10.0.2.2만 허용한다.
             buildConfigField("String", "SERVER_URL", "\"http://10.0.2.2:8080\"")
         }
         release {
-            // 운영 서버(https)가 준비되기 전까지 릴리스는 앱 안 시연 데이터만 쓴다.
-            buildConfigField("String", "SERVER_URL", "\"\"")
+            // 운영 HTTPS 주소는 환경변수·local.properties(SJ_RELEASE_SERVER_URL)로만 주입한다. 미설정 시 앱 안 시연 데이터만 쓴다.
+            buildConfigField("String", "SERVER_URL", "\"$escapedReleaseServerUrl\"")
             isMinifyEnabled = false
             // 키가 없으면 서명되지 않은 APK가 나온다(심사 제출 불가)
             signingConfig = signingConfigs.findByName("release")

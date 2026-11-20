@@ -91,13 +91,23 @@ class AppGraph(private val context: Context) {
     private val securePrefs = SecurePreferenceStore(SharedPreferencesKeyValueStore(rawPrefs), localCipher)
     private val deviceTokenStore = EncryptedDeviceTokenStore(securePrefs)
 
-    /** true면 smart-journey-server(웹 POS와 공유)로 접수한다. 디버그 빌드의 데모 패널에서 켠다. */
-    val useServer = MutableStateFlow(false)
+    private val serverBackend = BuildConfig.SERVER_URL.takeIf { it.isNotBlank() }?.let { url ->
+        ServerBackend(
+            baseUrl = url,
+            tokenStore = deviceTokenStore,
+            allowCleartext = BuildConfig.DEBUG,
+        ) { CONSENT_VERSION.takeIf { consented.value } }
+    }
+
+    /**
+     * true면 smart-journey-server(웹 POS와 공유)로 접수한다.
+     * - debug: 기본은 앱 안 시연 데이터(FakeBackend)이고 데모 패널에서 전환한다.
+     * - release: SJ_RELEASE_SERVER_URL(HTTPS)이 주입된 경우에만 기본 활성화하고, 미주입 시 FakeBackend를 쓴다.
+     */
+    val useServer = MutableStateFlow(!BuildConfig.DEBUG && serverBackend != null)
     val backend = SwitchingBackend(
         fake = FakeBackend(),
-        server = BuildConfig.SERVER_URL.takeIf { it.isNotBlank() }?.let { url ->
-            ServerBackend(url, tokenStore = deviceTokenStore) { CONSENT_VERSION.takeIf { consented.value } }
-        },
+        server = serverBackend,
         useServer = { useServer.value },
     )
 
