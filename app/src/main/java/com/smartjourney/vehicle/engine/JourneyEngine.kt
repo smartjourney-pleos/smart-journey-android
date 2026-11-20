@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -55,7 +56,9 @@ class JourneyEngine(
     init {
         if (storage != null) {
             scope.launch {
-                _state.collect { s ->
+                // Dispatchers.Main.immediate에서는 init 직후 초기 빈 상태가 동기 발행되므로,
+                // restore() 호출 전에 기존 암호화 여정을 지우지 않도록 초기값 1건은 건너뛴다.
+                _state.drop(1).collect { s ->
                     if (s.active && s.stops.isNotEmpty()) {
                         storage.save(s)
                     } else {

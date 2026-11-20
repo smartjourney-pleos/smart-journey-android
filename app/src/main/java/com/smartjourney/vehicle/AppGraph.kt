@@ -14,10 +14,14 @@ import com.smartjourney.vehicle.core.VehicleCaps
 import com.smartjourney.vehicle.core.VehicleGateway
 import com.smartjourney.vehicle.core.VehicleSnapshot
 import com.smartjourney.vehicle.core.setRouteAndShowNavigation
+import com.smartjourney.vehicle.data.EncryptedDeviceTokenStore
 import com.smartjourney.vehicle.data.FakeBackend
-import com.smartjourney.vehicle.data.ServerBackend
-import com.smartjourney.vehicle.data.SwitchingBackend
+import com.smartjourney.vehicle.data.KeystoreAesGcmCipher
 import com.smartjourney.vehicle.data.PreferencesJourneyStorage
+import com.smartjourney.vehicle.data.SecurePreferenceStore
+import com.smartjourney.vehicle.data.ServerBackend
+import com.smartjourney.vehicle.data.SharedPreferencesKeyValueStore
+import com.smartjourney.vehicle.data.SwitchingBackend
 import com.smartjourney.vehicle.demo.DemoController
 import com.smartjourney.vehicle.ui.PopupViewport
 import com.smartjourney.vehicle.domain.Store
@@ -31,6 +35,7 @@ import com.smartjourney.vehicle.voice.LateVoiceResult
 import kotlinx.coroutines.channels.Channel
 import com.smartjourney.vehicle.voice.VoiceDecision
 import com.smartjourney.vehicle.voice.VoiceIssue
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -81,11 +86,18 @@ val Context.graph: AppGraph get() = (applicationContext as SmartJourneyApp).grap
 class AppGraph(private val context: Context) {
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     val demo = DemoController(scope)
+    private val localCipher = KeystoreAesGcmCipher()
+    private val rawPrefs = context.getSharedPreferences("smart_journey", Context.MODE_PRIVATE)
+    private val securePrefs = SecurePreferenceStore(SharedPreferencesKeyValueStore(rawPrefs), localCipher)
+    private val deviceTokenStore = EncryptedDeviceTokenStore(securePrefs)
+
     /** true면 smart-journey-server(웹 POS와 공유)로 접수한다. 디버그 빌드의 데모 패널에서 켠다. */
     val useServer = MutableStateFlow(false)
     val backend = SwitchingBackend(
         fake = FakeBackend(),
-        server = BuildConfig.SERVER_URL.takeIf { it.isNotBlank() }?.let { url -> ServerBackend(url) { CONSENT_VERSION.takeIf { consented.value } } },
+        server = BuildConfig.SERVER_URL.takeIf { it.isNotBlank() }?.let { url ->
+            ServerBackend(url, tokenStore = deviceTokenStore) { CONSENT_VERSION.takeIf { consented.value } }
+        },
         useServer = { useServer.value },
     )
 
@@ -95,25 +107,38 @@ class AppGraph(private val context: Context) {
         useServer.value = on
         return true
     }
-    val storage = PreferencesJourneyStorage(context)
+    val storage = PreferencesJourneyStorage(context, localCipher)
     val navi = NaviGatewayFactory.create(context)
     val signals = AppSignals(context, navi, demo, scope)
     val engine = JourneyEngine(signals, backend, scope, storage = storage, logger = { if (BuildConfig.DEBUG) Log.i(TAG, it) })
-
-    private val prefs = context.getSharedPreferences("smart_journey", Context.MODE_PRIVATE)
 
     /**
      * 데이터 전송 동의 (정책 4). 동의 전에는 여정을 시작할 수 없다.
      * 고지 내용이 바뀌면 [CONSENT_VERSION]을 올려 다시 동의받는다. 실서버 연동 뒤에는 GET /consent/notice의 version을 쓴다.
      */
-    val consented = MutableStateFlow(prefs.getString("consent_version", null) == CONSENT_VERSION)
+    val consented = MutableStateFlow(
+        securePrefs.getEncryptedString(KEY_CONSENT_ENC, legacyPlainKey = KEY_CONSENT_LEGACY) == CONSENT_VERSION,
+    )
 
     /** 대기 허용 시간(분). 정차 중 홈에서 바꾼다 (명세서 v4 6장). */
-    val waitLimitMin = MutableStateFlow(prefs.getInt("wait_limit_min", DEFAULT_WAIT_LIMIT_MIN))
+    val waitLimitMin = MutableStateFlow(loadWaitLimitMin())
+
+    private fun loadWaitLimitMin(): Int {
+        securePrefs.getEncryptedString(KEY_WAIT_LIMIT_ENC)?.toIntOrNull()?.let { return it.coerceIn(10, 120) }
+        if (rawPrefs.contains(KEY_WAIT_LIMIT_LEGACY)) {
+            val legacy = runCatching { rawPrefs.getInt(KEY_WAIT_LIMIT_LEGACY, DEFAULT_WAIT_LIMIT_MIN) }
+                .getOrDefault(DEFAULT_WAIT_LIMIT_MIN)
+                .coerceIn(10, 120)
+            rawPrefs.edit().remove(KEY_WAIT_LIMIT_LEGACY).apply()
+            securePrefs.putEncryptedString(KEY_WAIT_LIMIT_ENC, legacy.toString())
+            return legacy
+        }
+        return DEFAULT_WAIT_LIMIT_MIN
+    }
 
     fun setWaitLimit(minutes: Int) {
         val value = minutes.coerceIn(10, 120)
-        prefs.edit().putInt("wait_limit_min", value).apply()
+        securePrefs.putEncryptedString(KEY_WAIT_LIMIT_ENC, value.toString(), legacyPlainKey = KEY_WAIT_LIMIT_LEGACY)
         waitLimitMin.value = value
         engine.setWaitLimit(value)
     }
@@ -152,12 +177,18 @@ class AppGraph(private val context: Context) {
     }
 
     fun setConsent(agreed: Boolean) {
-        prefs.edit().putString("consent_version", if (agreed) CONSENT_VERSION else null).apply()
+        securePrefs.putEncryptedString(
+            KEY_CONSENT_ENC,
+            if (agreed) CONSENT_VERSION else null,
+            legacyPlainKey = KEY_CONSENT_LEGACY,
+        )
         consented.value = agreed
         if (!agreed) {
             spokenPromptId.value = null
             engine.end()
             storage.clear()
+            backend.server?.clearToken()
+            deviceTokenStore.clear()
         }
     }
 
@@ -205,6 +236,13 @@ class AppGraph(private val context: Context) {
         if (demo.enabled.value) demo.onJourneyStarted()
         return Result.success(Unit)
     }
+
+    companion object {
+        private const val KEY_CONSENT_ENC = "consent_version_enc"
+        private const val KEY_CONSENT_LEGACY = "consent_version"
+        private const val KEY_WAIT_LIMIT_ENC = "wait_limit_min_enc"
+        private const val KEY_WAIT_LIMIT_LEGACY = "wait_limit_min"
+    }
 }
 
 enum class EtaSource { NAVI_LIVE, NAVI_REQUEST, DEMO }
@@ -226,13 +264,23 @@ class AppSignals(
         .onFailure { Log.w(TAG, "CarUxRestrictions 연결 실패", it) }.getOrNull()
 
     // Vehicle.initialize()에는 연결 완료 콜백이 없어 첫 조회가 서비스 연결 전에 실패할 수 있다.
-    // Error code 가이드(ERROR_SERVICE_CONNECTION_FAILURE·ERROR_INTERNAL_SERVICE → 재시도)에 따라 몇 번 다시 묻는다.
+    // Error code 가이드(ERROR_SERVICE_CONNECTION_FAILURE·ERROR_INTERNAL_SERVICE → 재시도)에 따라
+    // 일시 연결 오류나 타임아웃에만 재시도하고, 권한 부족·미지원 차종은 즉시 수동 모드로 넘어간다.
     private val realCaps = scope.async {
         val vehicle = realVehicle ?: return@async null
         var caps: VehicleCaps? = null
         for (attempt in 1..CAPS_ATTEMPTS) {
-            caps = withTimeoutOrNull(3_000) { runCatching { vehicle.capabilities() }.getOrNull() }
-            if (caps != null && (caps.seatSupported || caps.doorSupported)) break
+            caps = withTimeoutOrNull(3_000) {
+                try {
+                    vehicle.capabilities()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    null
+                }
+            }
+            if (caps != null && caps.seatSupported && caps.doorSupported) break
+            if (caps != null && !caps.retryableFailure) break
             if (attempt < CAPS_ATTEMPTS) delay(2_000L * attempt)
         }
         caps

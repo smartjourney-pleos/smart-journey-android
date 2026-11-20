@@ -137,15 +137,29 @@ object JourneyStateJsonCodec {
 }
 
 /**
- * Android SharedPreferences 기반의 여정 영속화 구현체.
+ * Android SharedPreferences 기반의 암호화 여정 영속화 구현체.
+ * Android Keystore AES-GCM으로 직렬화 JSON을 암호화해 저장하며,
+ * 암복호화 실패 시 평문 저장 없이 손상 데이터를 정리한다.
  */
-class PreferencesJourneyStorage(
-    context: Context,
+class PreferencesJourneyStorage internal constructor(
+    private val secureStore: SecurePreferenceStore,
     private val maxAgeMs: Long = 12 * 60 * 60 * 1000L, // 12시간 이내의 여정만 복원
     private val now: () -> Long = System::currentTimeMillis,
 ) : JourneyStorage {
 
-    private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    constructor(
+        context: Context,
+        cipher: TextCipher = KeystoreAesGcmCipher(),
+        maxAgeMs: Long = 12 * 60 * 60 * 1000L,
+        now: () -> Long = System::currentTimeMillis,
+    ) : this(
+        secureStore = SecurePreferenceStore(
+            SharedPreferencesKeyValueStore(context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)),
+            cipher,
+        ),
+        maxAgeMs = maxAgeMs,
+        now = now,
+    )
 
     override fun save(state: JourneyState) {
         if (!state.active || state.stops.isEmpty()) {
@@ -153,11 +167,11 @@ class PreferencesJourneyStorage(
             return
         }
         val serialized = JourneyStateJsonCodec.toJson(state, now())
-        prefs.edit().putString(KEY_JOURNEY_JSON, serialized).apply()
+        secureStore.putEncryptedString(KEY_JOURNEY_ENC, serialized, legacyPlainKey = KEY_JOURNEY_JSON)
     }
 
     override fun restore(): JourneyState? {
-        val raw = prefs.getString(KEY_JOURNEY_JSON, null) ?: return null
+        val raw = secureStore.getEncryptedString(KEY_JOURNEY_ENC, legacyPlainKey = KEY_JOURNEY_JSON) ?: return null
         val restored = JourneyStateJsonCodec.fromJson(raw, now(), maxAgeMs)
         if (restored == null) {
             clear()
@@ -166,11 +180,12 @@ class PreferencesJourneyStorage(
     }
 
     override fun clear() {
-        prefs.edit().remove(KEY_JOURNEY_JSON).apply()
+        secureStore.remove(KEY_JOURNEY_ENC, legacyPlainKey = KEY_JOURNEY_JSON)
     }
 
     companion object {
         private const val PREFS_NAME = "smart_journey_storage"
+        private const val KEY_JOURNEY_ENC = "journey_state_enc"
         private const val KEY_JOURNEY_JSON = "journey_state_json"
     }
 }
